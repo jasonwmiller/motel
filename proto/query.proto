@@ -1,0 +1,131 @@
+syntax = "proto3";
+
+package motel.query;
+
+import "opentelemetry/proto/trace/v1/trace.proto";
+import "opentelemetry/proto/logs/v1/logs.proto";
+import "opentelemetry/proto/metrics/v1/metrics.proto";
+import "opentelemetry/proto/resource/v1/resource.proto";
+import "opentelemetry/proto/common/v1/common.proto";
+
+service QueryService {
+  // Query traces with optional filters
+  rpc QueryTraces(QueryTracesRequest) returns (QueryTracesResponse);
+  // Query logs with optional filters
+  rpc QueryLogs(QueryLogsRequest) returns (QueryLogsResponse);
+  // Query metrics with optional filters
+  rpc QueryMetrics(QueryMetricsRequest) returns (QueryMetricsResponse);
+
+  // Follow (stream) new data as it arrives
+  rpc FollowTraces(FollowRequest) returns (stream FollowTracesResponse);
+  rpc FollowLogs(FollowRequest) returns (stream FollowLogsResponse);
+  rpc FollowMetrics(FollowRequest) returns (stream FollowMetricsResponse);
+
+  // Execute SQL query
+  rpc SqlQuery(SqlQueryRequest) returns (SqlQueryResponse);
+
+  // Clear stored data
+  rpc ClearTraces(ClearRequest) returns (ClearResponse);
+  rpc ClearLogs(ClearRequest) returns (ClearResponse);
+  rpc ClearMetrics(ClearRequest) returns (ClearResponse);
+  rpc ClearAll(ClearRequest) returns (ClearResponse);
+
+  // Server status
+  rpc Status(StatusRequest) returns (StatusResponse);
+
+  // Shutdown server
+  rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
+}
+
+message QueryTracesRequest {
+  string service_name = 1;
+  string span_name = 2;
+  string trace_id = 3;
+  string since = 4;        // relative (30s, 5m, 1h) or RFC3339
+  string until = 5;
+  int64 limit = 6;
+  map<string, string> attributes = 7;
+}
+
+message QueryTracesResponse {
+  repeated opentelemetry.proto.trace.v1.ResourceSpans resource_spans = 1;
+}
+
+message QueryLogsRequest {
+  string service_name = 1;
+  string severity = 2;
+  string body_contains = 3;
+  string since = 4;
+  string until = 5;
+  int64 limit = 6;
+  map<string, string> attributes = 7;
+}
+
+message QueryLogsResponse {
+  repeated opentelemetry.proto.logs.v1.ResourceLogs resource_logs = 1;
+}
+
+message QueryMetricsRequest {
+  string service_name = 1;
+  string metric_name = 2;
+  string since = 3;
+  string until = 4;
+  int64 limit = 5;
+}
+
+message QueryMetricsResponse {
+  repeated opentelemetry.proto.metrics.v1.ResourceMetrics resource_metrics = 1;
+}
+
+message FollowRequest {}
+
+message FollowTracesResponse {
+  repeated opentelemetry.proto.trace.v1.ResourceSpans resource_spans = 1;
+}
+
+message FollowLogsResponse {
+  repeated opentelemetry.proto.logs.v1.ResourceLogs resource_logs = 1;
+}
+
+message FollowMetricsResponse {
+  repeated opentelemetry.proto.metrics.v1.ResourceMetrics resource_metrics = 1;
+}
+
+message SqlQueryRequest {
+  string query = 1;
+}
+
+message SqlQueryResponse {
+  repeated Column columns = 1;
+  repeated Row rows = 2;
+}
+
+message Column {
+  string name = 1;
+  string data_type = 2;
+}
+
+message Row {
+  repeated string values = 1;
+}
+
+message ClearRequest {}
+
+message ClearResponse {
+  int64 cleared_count = 1;
+}
+
+message StatusRequest {}
+
+message StatusResponse {
+  int64 trace_count = 1;
+  int64 span_count = 2;
+  int64 log_count = 3;
+  int64 metric_count = 4;
+}
+
+message ShutdownRequest {}
+
+message ShutdownResponse {
+  string message = 1;
+}
