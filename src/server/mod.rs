@@ -26,7 +26,8 @@ pub async fn run(args: ServerArgs) -> anyhow::Result<()> {
     init_tracing(&args)?;
 
     // Create shared store
-    let (store, _event_rx) = Store::new_shared(args.max_traces, args.max_logs, args.max_metrics);
+    let (store, _event_rx) =
+        Store::new_shared(args.max_traces as usize, args.max_logs as usize, args.max_metrics as usize);
 
     // Get the broadcast sender for event subscriptions
     let event_tx = store.read().await.event_tx.clone();
@@ -44,10 +45,11 @@ pub async fn run(args: ServerArgs) -> anyhow::Result<()> {
             store: otlp_grpc_store,
             event_tx: otlp_event_tx,
         };
+        const MAX_MSG: usize = 16 * 1024 * 1024;
         Server::builder()
-            .add_service(TraceServiceServer::new(otlp_server.clone()))
-            .add_service(LogsServiceServer::new(otlp_server.clone()))
-            .add_service(MetricsServiceServer::new(otlp_server))
+            .add_service(TraceServiceServer::new(otlp_server.clone()).max_decoding_message_size(MAX_MSG))
+            .add_service(LogsServiceServer::new(otlp_server.clone()).max_decoding_message_size(MAX_MSG))
+            .add_service(MetricsServiceServer::new(otlp_server).max_decoding_message_size(MAX_MSG))
             .serve(grpc_addr)
             .await
             .context("OTLP gRPC server failed")
@@ -68,7 +70,7 @@ pub async fn run(args: ServerArgs) -> anyhow::Result<()> {
     });
 
     // Build DataFusion context for SQL queries
-    let session_ctx = crate::query::datafusion_ctx::create_context(store.clone()).await;
+    let session_ctx = crate::query::datafusion_ctx::create_context(store.clone()).await?;
 
     // Build Query gRPC service
     let query_addr = args.query_addr.parse().context("invalid query address")?;
@@ -81,7 +83,7 @@ pub async fn run(args: ServerArgs) -> anyhow::Result<()> {
     let query_grpc_handle = tokio::spawn(async move {
         tracing::info!("Query gRPC listening on {}", query_addr);
         Server::builder()
-            .add_service(QueryServiceServer::new(query_service))
+            .add_service(QueryServiceServer::new(query_service).max_decoding_message_size(16 * 1024 * 1024))
             .serve(query_addr)
             .await
             .context("Query gRPC server failed")

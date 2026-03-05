@@ -46,22 +46,26 @@ impl QueryService for QueryServiceImpl {
 
         // Filter by span_name
         if !req.span_name.is_empty() {
-            resource_spans.retain(|rs| {
-                rs.scope_spans
-                    .iter()
-                    .any(|ss| ss.spans.iter().any(|s| s.name == req.span_name))
-            });
+            for rs in &mut resource_spans {
+                for ss in &mut rs.scope_spans {
+                    ss.spans.retain(|s| s.name == req.span_name);
+                }
+                rs.scope_spans.retain(|ss| !ss.spans.is_empty());
+            }
+            resource_spans.retain(|rs| !rs.scope_spans.is_empty());
         }
 
         // Filter by trace_id
         if !req.trace_id.is_empty() {
             let trace_id_bytes = hex::decode(&req.trace_id)
                 .map_err(|e| Status::invalid_argument(format!("invalid trace_id hex: {e}")))?;
-            resource_spans.retain(|rs| {
-                rs.scope_spans
-                    .iter()
-                    .any(|ss| ss.spans.iter().any(|s| s.trace_id == trace_id_bytes))
-            });
+            for rs in &mut resource_spans {
+                for ss in &mut rs.scope_spans {
+                    ss.spans.retain(|s| s.trace_id == trace_id_bytes);
+                }
+                rs.scope_spans.retain(|ss| !ss.spans.is_empty());
+            }
+            resource_spans.retain(|rs| !rs.scope_spans.is_empty());
         }
 
         // Apply limit
@@ -102,28 +106,32 @@ impl QueryService for QueryServiceImpl {
         // Filter by severity
         if !req.severity.is_empty() {
             let severity_upper = req.severity.to_uppercase();
-            resource_logs.retain(|rl| {
-                rl.scope_logs.iter().any(|sl| {
-                    sl.log_records.iter().any(|lr| {
+            for rl in &mut resource_logs {
+                for sl in &mut rl.scope_logs {
+                    sl.log_records.retain(|lr| {
                         format!("{:?}", lr.severity_number())
                             .to_uppercase()
                             .contains(&severity_upper)
-                    })
-                })
-            });
+                    });
+                }
+                rl.scope_logs.retain(|sl| !sl.log_records.is_empty());
+            }
+            resource_logs.retain(|rl| !rl.scope_logs.is_empty());
         }
 
         // Filter by body_contains
         if !req.body_contains.is_empty() {
-            resource_logs.retain(|rl| {
-                rl.scope_logs.iter().any(|sl| {
-                    sl.log_records.iter().any(|lr| {
+            for rl in &mut resource_logs {
+                for sl in &mut rl.scope_logs {
+                    sl.log_records.retain(|lr| {
                         lr.body
                             .as_ref()
                             .is_some_and(|body| format!("{:?}", body).contains(&req.body_contains))
-                    })
-                })
-            });
+                    });
+                }
+                rl.scope_logs.retain(|sl| !sl.log_records.is_empty());
+            }
+            resource_logs.retain(|rl| !rl.scope_logs.is_empty());
         }
 
         // Apply limit
@@ -163,11 +171,13 @@ impl QueryService for QueryServiceImpl {
 
         // Filter by metric_name
         if !req.metric_name.is_empty() {
-            resource_metrics.retain(|rm| {
-                rm.scope_metrics
-                    .iter()
-                    .any(|sm| sm.metrics.iter().any(|m| m.name == req.metric_name))
-            });
+            for rm in &mut resource_metrics {
+                for sm in &mut rm.scope_metrics {
+                    sm.metrics.retain(|m| m.name == req.metric_name);
+                }
+                rm.scope_metrics.retain(|sm| !sm.metrics.is_empty());
+            }
+            resource_metrics.retain(|rm| !rm.scope_metrics.is_empty());
         }
 
         // Apply limit

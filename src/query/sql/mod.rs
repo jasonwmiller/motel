@@ -48,9 +48,9 @@ pub async fn execute_with_columns(
         let formatters: Vec<ArrayFormatter> = (0..num_cols)
             .map(|col_idx| {
                 ArrayFormatter::try_new(batch.column(col_idx).as_ref(), &format_options)
-                    .expect("failed to create formatter")
+                    .map_err(|e| format!("failed to create formatter for column {col_idx}: {e}"))
             })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
 
         for row_idx in 0..num_rows {
             let values: Vec<String> = formatters

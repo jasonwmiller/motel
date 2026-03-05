@@ -102,11 +102,10 @@ pub fn resource_spans_to_batch(data: &[ResourceSpans]) -> Result<RecordBatch, St
                 span_id.append_value(hex::encode(&span.span_id));
                 parent_span_id.append_value(hex::encode(&span.parent_span_id));
                 kind.append_value(span.kind);
-                start_time.append_value(span.start_time_unix_nano as i64);
-                end_time.append_value(span.end_time_unix_nano as i64);
-                duration_ns.append_value(
-                    span.end_time_unix_nano as i64 - span.start_time_unix_nano as i64,
-                );
+                start_time.append_value(i64::try_from(span.start_time_unix_nano).unwrap_or(i64::MAX));
+                end_time.append_value(i64::try_from(span.end_time_unix_nano).unwrap_or(i64::MAX));
+                let dur = span.end_time_unix_nano.saturating_sub(span.start_time_unix_nano);
+                duration_ns.append_value(i64::try_from(dur).unwrap_or(i64::MAX));
 
                 let (sc, sm) = span
                     .status
@@ -163,7 +162,7 @@ pub fn resource_logs_to_batch(data: &[ResourceLogs]) -> Result<RecordBatch, Stri
         for scope_logs in &rl.scope_logs {
             for lr in &scope_logs.log_records {
                 service_name.append_value(&svc);
-                timestamp.append_value(lr.time_unix_nano as i64);
+                timestamp.append_value(i64::try_from(lr.time_unix_nano).unwrap_or(i64::MAX));
                 severity_number.append_value(lr.severity_number);
                 severity_text.append_value(&lr.severity_text);
 
@@ -230,7 +229,7 @@ pub fn resource_metrics_to_batch(data: &[ResourceMetrics]) -> Result<RecordBatch
                             service_name.append_value(&svc);
                             metric_name.append_value(&m.name);
                             metric_type.append_value("gauge");
-                            timestamp.append_value(dp.time_unix_nano as i64);
+                            timestamp.append_value(i64::try_from(dp.time_unix_nano).unwrap_or(i64::MAX));
                             value.append_value(extract_number_value(&dp.value));
                             unit.append_value(&m.unit);
                             attributes.append_value(kvs_to_json(&dp.attributes));
@@ -243,7 +242,7 @@ pub fn resource_metrics_to_batch(data: &[ResourceMetrics]) -> Result<RecordBatch
                             service_name.append_value(&svc);
                             metric_name.append_value(&m.name);
                             metric_type.append_value("sum");
-                            timestamp.append_value(dp.time_unix_nano as i64);
+                            timestamp.append_value(i64::try_from(dp.time_unix_nano).unwrap_or(i64::MAX));
                             value.append_value(extract_number_value(&dp.value));
                             unit.append_value(&m.unit);
                             attributes.append_value(kvs_to_json(&dp.attributes));
@@ -256,7 +255,7 @@ pub fn resource_metrics_to_batch(data: &[ResourceMetrics]) -> Result<RecordBatch
                             service_name.append_value(&svc);
                             metric_name.append_value(&m.name);
                             metric_type.append_value("histogram");
-                            timestamp.append_value(dp.time_unix_nano as i64);
+                            timestamp.append_value(i64::try_from(dp.time_unix_nano).unwrap_or(i64::MAX));
                             value.append_value(dp.sum.unwrap_or(dp.count as f64));
                             unit.append_value(&m.unit);
                             attributes.append_value(kvs_to_json(&dp.attributes));
@@ -269,7 +268,7 @@ pub fn resource_metrics_to_batch(data: &[ResourceMetrics]) -> Result<RecordBatch
                             service_name.append_value(&svc);
                             metric_name.append_value(&m.name);
                             metric_type.append_value("exponential_histogram");
-                            timestamp.append_value(dp.time_unix_nano as i64);
+                            timestamp.append_value(i64::try_from(dp.time_unix_nano).unwrap_or(i64::MAX));
                             value.append_value(dp.sum.unwrap_or(dp.count as f64));
                             unit.append_value(&m.unit);
                             attributes.append_value(kvs_to_json(&dp.attributes));
@@ -282,7 +281,7 @@ pub fn resource_metrics_to_batch(data: &[ResourceMetrics]) -> Result<RecordBatch
                             service_name.append_value(&svc);
                             metric_name.append_value(&m.name);
                             metric_type.append_value("summary");
-                            timestamp.append_value(dp.time_unix_nano as i64);
+                            timestamp.append_value(i64::try_from(dp.time_unix_nano).unwrap_or(i64::MAX));
                             value.append_value(dp.sum);
                             unit.append_value(&m.unit);
                             attributes.append_value(kvs_to_json(&dp.attributes));

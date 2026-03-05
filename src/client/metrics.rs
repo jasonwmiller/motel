@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::cli::{MetricsArgs, OutputFormat};
-use crate::client::print_table;
+use crate::client::{extract_request_trace_id, print_table};
 use crate::query_proto::QueryMetricsRequest;
 use crate::query_proto::query_service_client::QueryServiceClient;
 
@@ -139,17 +139,3 @@ fn describe_metric_data(data: &Option<crate::otel::metrics::v1::metric::Data>) -
     }
 }
 
-fn extract_request_trace_id<T>(response: &tonic::Response<T>) -> Option<String> {
-    response
-        .metadata()
-        .get("traceparent")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|tp| {
-            let parts: Vec<&str> = tp.split('-').collect();
-            if parts.len() >= 2 {
-                Some(parts[1].to_string())
-            } else {
-                None
-            }
-        })
-}

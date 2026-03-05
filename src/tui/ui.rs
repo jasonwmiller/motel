@@ -291,7 +291,14 @@ fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max {
         s.to_string()
     } else {
-        format!("{}...", &s[..max.saturating_sub(3)])
+        let end = max.saturating_sub(3);
+        let boundary = s
+            .char_indices()
+            .map(|(i, _)| i)
+            .take_while(|&i| i <= end)
+            .last()
+            .unwrap_or(0);
+        format!("{}...", &s[..boundary])
     }
 }
 
@@ -332,10 +339,11 @@ fn draw_detail_overlay(f: &mut Frame, app: &App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(" Detail (Esc to close) ")
+                .title(" Detail (Esc to close, j/k to scroll) ")
                 .style(Style::default().bg(Color::Black)),
         )
         .wrap(Wrap { trim: false })
+        .scroll((app.detail_scroll, 0))
         .style(Style::default().bg(Color::Black));
 
     f.render_widget(para, overlay);

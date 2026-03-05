@@ -44,30 +44,57 @@ pub async fn run(args: ViewArgs) -> Result<()> {
     let store_traces = store.clone();
     tokio::spawn(async move {
         let mut stream = traces_stream;
-        while let Ok(Some(resp)) = stream.message().await {
-            store_traces
-                .write()
-                .await
-                .insert_traces(resp.resource_spans);
+        loop {
+            match stream.message().await {
+                Ok(Some(resp)) => {
+                    store_traces
+                        .write()
+                        .await
+                        .insert_traces(resp.resource_spans);
+                }
+                Ok(None) => break,
+                Err(e) => {
+                    eprintln!("Follow stream error: {e}");
+                    break;
+                }
+            }
         }
     });
 
     let store_logs = store.clone();
     tokio::spawn(async move {
         let mut stream = logs_stream;
-        while let Ok(Some(resp)) = stream.message().await {
-            store_logs.write().await.insert_logs(resp.resource_logs);
+        loop {
+            match stream.message().await {
+                Ok(Some(resp)) => {
+                    store_logs.write().await.insert_logs(resp.resource_logs);
+                }
+                Ok(None) => break,
+                Err(e) => {
+                    eprintln!("Follow stream error: {e}");
+                    break;
+                }
+            }
         }
     });
 
     let store_metrics = store.clone();
     tokio::spawn(async move {
         let mut stream = metrics_stream;
-        while let Ok(Some(resp)) = stream.message().await {
-            store_metrics
-                .write()
-                .await
-                .insert_metrics(resp.resource_metrics);
+        loop {
+            match stream.message().await {
+                Ok(Some(resp)) => {
+                    store_metrics
+                        .write()
+                        .await
+                        .insert_metrics(resp.resource_metrics);
+                }
+                Ok(None) => break,
+                Err(e) => {
+                    eprintln!("Follow stream error: {e}");
+                    break;
+                }
+            }
         }
     });
 

@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::cli::{OutputFormat, TracesArgs};
-use crate::client::{hex_encode, parse_attributes, print_table};
+use crate::client::{extract_request_trace_id, hex_encode, parse_attributes, print_table};
 use crate::query_proto::QueryTracesRequest;
 use crate::query_proto::query_service_client::QueryServiceClient;
 
@@ -167,19 +167,3 @@ fn format_status(status: Option<&crate::otel::trace::v1::Status>) -> String {
     }
 }
 
-/// Try to extract a trace-id from gRPC response metadata (traceparent header).
-fn extract_request_trace_id<T>(response: &tonic::Response<T>) -> Option<String> {
-    response
-        .metadata()
-        .get("traceparent")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|tp| {
-            // traceparent format: version-trace_id-parent_id-flags
-            let parts: Vec<&str> = tp.split('-').collect();
-            if parts.len() >= 2 {
-                Some(parts[1].to_string())
-            } else {
-                None
-            }
-        })
-}

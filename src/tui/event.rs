@@ -30,20 +30,35 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> EventResult {
         return EventResult::Quit;
     }
 
-    match key.code {
-        KeyCode::Char('q') => {
-            if app.detail_open {
+    // When detail overlay is open, handle scroll keys for the overlay
+    if app.detail_open {
+        match key.code {
+            KeyCode::Char('q') | KeyCode::Esc => {
                 app.detail_open = false;
-            } else {
-                return EventResult::Quit;
             }
+            KeyCode::Up | KeyCode::Char('k') => {
+                app.detail_scroll = app.detail_scroll.saturating_sub(1);
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                app.detail_scroll = app.detail_scroll.saturating_add(1);
+            }
+            KeyCode::PageUp => {
+                app.detail_scroll = app.detail_scroll.saturating_sub(10);
+            }
+            KeyCode::PageDown => {
+                app.detail_scroll = app.detail_scroll.saturating_add(10);
+            }
+            KeyCode::Enter => {
+                app.detail_open = false;
+            }
+            _ => {}
         }
-        KeyCode::Esc => {
-            if app.detail_open {
-                app.detail_open = false;
-            } else {
-                return EventResult::Quit;
-            }
+        return EventResult::Continue;
+    }
+
+    match key.code {
+        KeyCode::Char('q') | KeyCode::Esc => {
+            return EventResult::Quit;
         }
         KeyCode::Tab => {
             if key.modifiers.contains(KeyModifiers::SHIFT) {
@@ -51,28 +66,33 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> EventResult {
             } else {
                 app.next_tab();
             }
-            app.detail_open = false;
         }
         KeyCode::BackTab => {
             app.prev_tab();
-            app.detail_open = false;
         }
         KeyCode::Char('1') => {
             app.select_tab(Tab::Traces);
-            app.detail_open = false;
         }
         KeyCode::Char('2') => {
             app.select_tab(Tab::Logs);
-            app.detail_open = false;
         }
         KeyCode::Char('3') => {
             app.select_tab(Tab::Metrics);
-            app.detail_open = false;
         }
         KeyCode::Up | KeyCode::Char('k') => app.move_up(),
         KeyCode::Down | KeyCode::Char('j') => app.move_down(),
-        KeyCode::PageUp => app.page_up(20),
-        KeyCode::PageDown => app.page_down(20),
+        KeyCode::PageUp => {
+            let page = crossterm::terminal::size()
+                .map(|(_, h)| h.saturating_sub(5) as usize)
+                .unwrap_or(20);
+            app.page_up(page);
+        }
+        KeyCode::PageDown => {
+            let page = crossterm::terminal::size()
+                .map(|(_, h)| h.saturating_sub(5) as usize)
+                .unwrap_or(20);
+            app.page_down(page);
+        }
         KeyCode::Home => app.home(),
         KeyCode::End => app.end(),
         KeyCode::Enter => app.toggle_detail(),

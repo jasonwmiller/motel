@@ -53,6 +53,23 @@ pub fn parse_attributes(attrs: &[String]) -> anyhow::Result<Vec<(String, String)
         .collect()
 }
 
+/// Try to extract a trace-id from gRPC response metadata (traceparent header).
+pub fn extract_request_trace_id<T>(response: &tonic::Response<T>) -> Option<String> {
+    response
+        .metadata()
+        .get("traceparent")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|tp| {
+            // traceparent format: version-trace_id-parent_id-flags
+            let parts: Vec<&str> = tp.split('-').collect();
+            if parts.len() >= 2 {
+                Some(parts[1].to_string())
+            } else {
+                None
+            }
+        })
+}
+
 /// Print a table with aligned columns.
 /// `headers` is a slice of column header names.
 /// `columns` is a Vec of columns, where each column is a Vec of cell values.

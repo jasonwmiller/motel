@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use crate::cli::{LogsArgs, OutputFormat};
 use crate::client::trace::format_timestamp_ns;
-use crate::client::{parse_attributes, print_table};
+use crate::client::{extract_request_trace_id, parse_attributes, print_table};
 use crate::query_proto::QueryLogsRequest;
 use crate::query_proto::query_service_client::QueryServiceClient;
 
@@ -131,17 +131,3 @@ fn format_any_value(v: &crate::otel::common::v1::AnyValue) -> String {
     }
 }
 
-fn extract_request_trace_id<T>(response: &tonic::Response<T>) -> Option<String> {
-    response
-        .metadata()
-        .get("traceparent")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|tp| {
-            let parts: Vec<&str> = tp.split('-').collect();
-            if parts.len() >= 2 {
-                Some(parts[1].to_string())
-            } else {
-                None
-            }
-        })
-}

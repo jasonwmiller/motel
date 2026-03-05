@@ -1,7 +1,7 @@
 use axum::{
     Router,
     body::Bytes,
-    extract::State,
+    extract::{DefaultBodyLimit, State},
     http::{HeaderMap, StatusCode, header},
     response::IntoResponse,
     routing::post,
@@ -24,6 +24,7 @@ pub fn router(store: SharedStore) -> Router {
         .route("/v1/traces", post(export_traces))
         .route("/v1/logs", post(export_logs))
         .route("/v1/metrics", post(export_metrics))
+        .layer(DefaultBodyLimit::max(16 * 1024 * 1024))
         .with_state(store)
 }
 

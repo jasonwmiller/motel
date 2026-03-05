@@ -2,7 +2,7 @@ use crate::cli::{LogsArgs, MetricsArgs, TracesArgs};
 use crate::client::parse_time_spec;
 
 /// Convert TracesArgs CLI flags to a SQL SELECT query.
-pub fn traces_args_to_sql(args: &TracesArgs) -> String {
+pub fn traces_args_to_sql(args: &TracesArgs) -> Result<String, String> {
     let mut conditions = Vec::new();
 
     if let Some(ref service) = args.service {
@@ -14,15 +14,13 @@ pub fn traces_args_to_sql(args: &TracesArgs) -> String {
     if let Some(ref trace_id) = args.trace_id {
         conditions.push(format!("trace_id = '{}'", escape_sql(trace_id)));
     }
-    if let Some(ref since) = args.since
-        && let Ok(dt) = parse_time_spec(since)
-    {
+    if let Some(ref since) = args.since {
+        let dt = parse_time_spec(since).map_err(|e| e.to_string())?;
         let nanos = dt.timestamp_nanos_opt().unwrap_or(0);
         conditions.push(format!("start_time_unix_nano >= {}", nanos));
     }
-    if let Some(ref until) = args.until
-        && let Ok(dt) = parse_time_spec(until)
-    {
+    if let Some(ref until) = args.until {
+        let dt = parse_time_spec(until).map_err(|e| e.to_string())?;
         let nanos = dt.timestamp_nanos_opt().unwrap_or(0);
         conditions.push(format!("start_time_unix_nano <= {}", nanos));
     }
@@ -31,8 +29,8 @@ pub fn traces_args_to_sql(args: &TracesArgs) -> String {
         if let Some((key, value)) = attr.split_once('=') {
             conditions.push(format!(
                 "attributes LIKE '%\"{}\":\"{}\"%'",
-                escape_sql(key),
-                escape_sql(value)
+                escape_sql_like(key),
+                escape_sql_like(value)
             ));
         }
     }
@@ -48,34 +46,35 @@ pub fn traces_args_to_sql(args: &TracesArgs) -> String {
         .map(|n| format!(" LIMIT {}", n))
         .unwrap_or_default();
 
-    format!(
+    Ok(format!(
         "SELECT * FROM traces{} ORDER BY start_time_unix_nano DESC{}",
         where_clause, limit_clause
-    )
+    ))
 }
 
 /// Convert LogsArgs CLI flags to a SQL SELECT query.
-pub fn logs_args_to_sql(args: &LogsArgs) -> String {
+pub fn logs_args_to_sql(args: &LogsArgs) -> Result<String, String> {
     let mut conditions = Vec::new();
 
     if let Some(ref service) = args.service {
         conditions.push(format!("service_name = '{}'", escape_sql(service)));
     }
     if let Some(ref severity) = args.severity {
-        conditions.push(format!("severity_text LIKE '%{}%'", escape_sql(severity)));
+        conditions.push(format!(
+            "severity_text LIKE '%{}%'",
+            escape_sql_like(severity)
+        ));
     }
     if let Some(ref body) = args.body {
-        conditions.push(format!("body LIKE '%{}%'", escape_sql(body)));
+        conditions.push(format!("body LIKE '%{}%'", escape_sql_like(body)));
     }
-    if let Some(ref since) = args.since
-        && let Ok(dt) = parse_time_spec(since)
-    {
+    if let Some(ref since) = args.since {
+        let dt = parse_time_spec(since).map_err(|e| e.to_string())?;
         let nanos = dt.timestamp_nanos_opt().unwrap_or(0);
         conditions.push(format!("timestamp_unix_nano >= {}", nanos));
     }
-    if let Some(ref until) = args.until
-        && let Ok(dt) = parse_time_spec(until)
-    {
+    if let Some(ref until) = args.until {
+        let dt = parse_time_spec(until).map_err(|e| e.to_string())?;
         let nanos = dt.timestamp_nanos_opt().unwrap_or(0);
         conditions.push(format!("timestamp_unix_nano <= {}", nanos));
     }
@@ -83,8 +82,8 @@ pub fn logs_args_to_sql(args: &LogsArgs) -> String {
         if let Some((key, value)) = attr.split_once('=') {
             conditions.push(format!(
                 "attributes LIKE '%\"{}\":\"{}\"%'",
-                escape_sql(key),
-                escape_sql(value)
+                escape_sql_like(key),
+                escape_sql_like(value)
             ));
         }
     }
@@ -100,14 +99,14 @@ pub fn logs_args_to_sql(args: &LogsArgs) -> String {
         .map(|n| format!(" LIMIT {}", n))
         .unwrap_or_default();
 
-    format!(
+    Ok(format!(
         "SELECT * FROM logs{} ORDER BY timestamp_unix_nano DESC{}",
         where_clause, limit_clause
-    )
+    ))
 }
 
 /// Convert MetricsArgs CLI flags to a SQL SELECT query.
-pub fn metrics_args_to_sql(args: &MetricsArgs) -> String {
+pub fn metrics_args_to_sql(args: &MetricsArgs) -> Result<String, String> {
     let mut conditions = Vec::new();
 
     if let Some(ref service) = args.service {
@@ -116,15 +115,13 @@ pub fn metrics_args_to_sql(args: &MetricsArgs) -> String {
     if let Some(ref name) = args.name {
         conditions.push(format!("metric_name = '{}'", escape_sql(name)));
     }
-    if let Some(ref since) = args.since
-        && let Ok(dt) = parse_time_spec(since)
-    {
+    if let Some(ref since) = args.since {
+        let dt = parse_time_spec(since).map_err(|e| e.to_string())?;
         let nanos = dt.timestamp_nanos_opt().unwrap_or(0);
         conditions.push(format!("timestamp_unix_nano >= {}", nanos));
     }
-    if let Some(ref until) = args.until
-        && let Ok(dt) = parse_time_spec(until)
-    {
+    if let Some(ref until) = args.until {
+        let dt = parse_time_spec(until).map_err(|e| e.to_string())?;
         let nanos = dt.timestamp_nanos_opt().unwrap_or(0);
         conditions.push(format!("timestamp_unix_nano <= {}", nanos));
     }
@@ -140,15 +137,22 @@ pub fn metrics_args_to_sql(args: &MetricsArgs) -> String {
         .map(|n| format!(" LIMIT {}", n))
         .unwrap_or_default();
 
-    format!(
+    Ok(format!(
         "SELECT * FROM metrics{} ORDER BY timestamp_unix_nano DESC{}",
         where_clause, limit_clause
-    )
+    ))
 }
 
-/// Basic SQL string escaping (single quotes).
+/// Basic SQL string escaping (single quotes and LIKE wildcards).
 fn escape_sql(s: &str) -> String {
     s.replace('\'', "''")
+}
+
+/// Escape for use inside a LIKE pattern (escapes %, _, and single quotes).
+fn escape_sql_like(s: &str) -> String {
+    s.replace('\'', "''")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
 }
 
 #[cfg(test)]
@@ -169,7 +173,7 @@ mod tests {
             show_trace_id: false,
             addr: "http://localhost:4319".into(),
         };
-        let sql = traces_args_to_sql(&args);
+        let sql = traces_args_to_sql(&args).unwrap();
         assert!(sql.contains("service_name = 'my-service'"));
         assert!(sql.contains("LIMIT 10"));
         assert!(sql.contains("ORDER BY start_time_unix_nano DESC"));
@@ -189,7 +193,7 @@ mod tests {
             show_trace_id: false,
             addr: "http://localhost:4319".into(),
         };
-        let sql = traces_args_to_sql(&args);
+        let sql = traces_args_to_sql(&args).unwrap();
         assert_eq!(
             sql,
             "SELECT * FROM traces ORDER BY start_time_unix_nano DESC"
@@ -210,7 +214,7 @@ mod tests {
             show_trace_id: false,
             addr: "http://localhost:4319".into(),
         };
-        let sql = logs_args_to_sql(&args);
+        let sql = logs_args_to_sql(&args).unwrap();
         assert!(sql.contains("severity_text LIKE '%ERROR%'"));
     }
 
@@ -226,7 +230,7 @@ mod tests {
             show_trace_id: false,
             addr: "http://localhost:4319".into(),
         };
-        let sql = metrics_args_to_sql(&args);
+        let sql = metrics_args_to_sql(&args).unwrap();
         assert!(sql.contains("metric_name = 'cpu.usage'"));
         assert!(sql.contains("LIMIT 5"));
     }
@@ -245,7 +249,7 @@ mod tests {
             show_trace_id: false,
             addr: "http://localhost:4319".into(),
         };
-        let sql = traces_args_to_sql(&args);
+        let sql = traces_args_to_sql(&args).unwrap();
         assert!(sql.contains(r#"attributes LIKE '%"http.method":"GET"%'"#));
     }
 }

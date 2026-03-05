@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use tokio::sync::{RwLock, broadcast};
 
@@ -20,7 +20,7 @@ pub struct Store {
     // Traces stored per trace_id for FIFO eviction by trace
     pub traces: VecDeque<ResourceSpans>,
     trace_id_order: VecDeque<Vec<u8>>,
-    trace_id_set: HashMap<Vec<u8>, usize>, // trace_id -> count of ResourceSpans
+    trace_id_set: HashSet<Vec<u8>>,
 
     pub logs: VecDeque<ResourceLogs>,
     pub metrics: VecDeque<ResourceMetrics>,
@@ -42,7 +42,7 @@ impl Store {
         let store = Self {
             traces: VecDeque::new(),
             trace_id_order: VecDeque::new(),
-            trace_id_set: HashMap::new(),
+            trace_id_set: HashSet::new(),
             logs: VecDeque::new(),
             metrics: VecDeque::new(),
             max_traces,
@@ -69,51 +69,51 @@ impl Store {
             for scope_spans in &rs.scope_spans {
                 for span in &scope_spans.spans {
                     let tid = &span.trace_id;
-                    if !self.trace_id_set.contains_key(tid) {
+                    if self.trace_id_set.insert(tid.clone()) {
                         self.trace_id_order.push_back(tid.clone());
                     }
-                    *self.trace_id_set.entry(tid.clone()).or_insert(0) += 1;
                 }
             }
         }
 
-        self.traces.extend(resource_spans.clone());
+        let event = StoreEvent::TracesInserted(resource_spans.clone());
+        self.traces.extend(resource_spans);
 
         // Evict oldest traces by trace_id
         while self.trace_id_set.len() > self.max_traces {
             if let Some(oldest_tid) = self.trace_id_order.pop_front() {
                 self.trace_id_set.remove(&oldest_tid);
-                self.traces.retain(|rs| {
-                    rs.scope_spans
-                        .iter()
-                        .any(|ss| ss.spans.iter().any(|s| s.trace_id != oldest_tid))
-                });
+                for rs in self.traces.iter_mut() {
+                    for ss in rs.scope_spans.iter_mut() {
+                        ss.spans.retain(|s| s.trace_id != oldest_tid);
+                    }
+                    rs.scope_spans.retain(|ss| !ss.spans.is_empty());
+                }
+                self.traces.retain(|rs| !rs.scope_spans.is_empty());
             }
         }
 
-        let _ = self
-            .event_tx
-            .send(StoreEvent::TracesInserted(resource_spans));
+        let _ = self.event_tx.send(event);
     }
 
     #[tracing::instrument(skip_all, fields(count = resource_logs.len()))]
     pub fn insert_logs(&mut self, resource_logs: Vec<ResourceLogs>) {
-        self.logs.extend(resource_logs.clone());
+        let event = StoreEvent::LogsInserted(resource_logs.clone());
+        self.logs.extend(resource_logs);
         while self.logs.len() > self.max_logs {
             self.logs.pop_front();
         }
-        let _ = self.event_tx.send(StoreEvent::LogsInserted(resource_logs));
+        let _ = self.event_tx.send(event);
     }
 
     #[tracing::instrument(skip_all, fields(count = resource_metrics.len()))]
     pub fn insert_metrics(&mut self, resource_metrics: Vec<ResourceMetrics>) {
-        self.metrics.extend(resource_metrics.clone());
+        let event = StoreEvent::MetricsInserted(resource_metrics.clone());
+        self.metrics.extend(resource_metrics);
         while self.metrics.len() > self.max_metrics {
             self.metrics.pop_front();
         }
-        let _ = self
-            .event_tx
-            .send(StoreEvent::MetricsInserted(resource_metrics));
+        let _ = self.event_tx.send(event);
     }
 
     #[tracing::instrument(skip_all)]
@@ -239,7 +239,7 @@ mod tests {
         store.insert_traces(vec![make_resource_spans(&[3; 16], "span3")]);
         assert_eq!(store.trace_count(), 2);
         // First trace should be evicted
-        assert!(!store.trace_id_set.contains_key(&vec![1u8; 16]));
+        assert!(!store.trace_id_set.contains(&vec![1u8; 16]));
     }
 
     #[test]

@@ -51,15 +51,15 @@ pub struct ServerArgs {
     /// OTLP endpoint for self-instrumentation
     #[arg(long, env = "OTEL_EXPORTER_OTLP_ENDPOINT")]
     pub otlp_endpoint: Option<String>,
-    /// Maximum number of traces to keep
-    #[arg(long, default_value = "10000")]
-    pub max_traces: usize,
-    /// Maximum number of log records to keep
-    #[arg(long, default_value = "100000")]
-    pub max_logs: usize,
-    /// Maximum number of metric data points to keep
-    #[arg(long, default_value = "100000")]
-    pub max_metrics: usize,
+    /// Maximum number of traces to keep (by unique trace ID)
+    #[arg(long, default_value = "10000", value_parser = clap::value_parser!(u64).range(1..))]
+    pub max_traces: u64,
+    /// Maximum number of log record batches to keep
+    #[arg(long, default_value = "100000", value_parser = clap::value_parser!(u64).range(1..))]
+    pub max_logs: u64,
+    /// Maximum number of metric batches to keep
+    #[arg(long, default_value = "100000", value_parser = clap::value_parser!(u64).range(1..))]
+    pub max_metrics: u64,
 }
 
 #[derive(clap::Args, Clone)]

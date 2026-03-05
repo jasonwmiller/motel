@@ -104,6 +104,7 @@ pub struct App {
     pub current_tab: Tab,
     pub tab_states: [TabState; 3],
     pub detail_open: bool,
+    pub detail_scroll: u16,
     pub should_quit: bool,
 
     // Cached flattened rows
@@ -124,6 +125,7 @@ impl App {
             current_tab: Tab::Traces,
             tab_states: [TabState::new(), TabState::new(), TabState::new()],
             detail_open: false,
+            detail_scroll: 0,
             should_quit: false,
             span_rows: Vec::new(),
             log_rows: Vec::new(),
@@ -217,6 +219,9 @@ impl App {
     pub fn toggle_detail(&mut self) {
         if self.current_row_count() > 0 {
             self.detail_open = !self.detail_open;
+            if self.detail_open {
+                self.detail_scroll = 0;
+            }
         }
     }
 
@@ -419,75 +424,96 @@ fn flatten_metrics(metrics: &VecDeque<ResourceMetrics>) -> Vec<MetricRow> {
         let service = extract_service_name(&resource_attrs);
         for sm in &rm.scope_metrics {
             for m in &sm.metrics {
-                let (mtype, value_str, time_nano, dp_attrs) = match &m.data {
+                let metric_name = m.name.clone();
+                let unit = m.unit.clone();
+                let description = m.description.clone();
+
+                match &m.data {
                     Some(metric::Data::Gauge(g)) => {
-                        if let Some(dp) = g.data_points.first() {
-                            (
-                                "Gauge",
-                                format_number_value(&dp.value),
-                                dp.time_unix_nano,
-                                dp.attributes.clone(),
-                            )
-                        } else {
-                            ("Gauge", "".to_string(), 0, vec![])
+                        for dp in &g.data_points {
+                            rows.push(MetricRow {
+                                time_nano: dp.time_unix_nano,
+                                service_name: service.clone(),
+                                metric_name: metric_name.clone(),
+                                metric_type: "Gauge".to_string(),
+                                value: format_number_value(&dp.value),
+                                unit: unit.clone(),
+                                description: description.clone(),
+                                attributes: dp.attributes.clone(),
+                                resource_attributes: resource_attrs.clone(),
+                            });
                         }
                     }
                     Some(metric::Data::Sum(s)) => {
-                        if let Some(dp) = s.data_points.first() {
-                            (
-                                "Sum",
-                                format_number_value(&dp.value),
-                                dp.time_unix_nano,
-                                dp.attributes.clone(),
-                            )
-                        } else {
-                            ("Sum", "".to_string(), 0, vec![])
+                        for dp in &s.data_points {
+                            rows.push(MetricRow {
+                                time_nano: dp.time_unix_nano,
+                                service_name: service.clone(),
+                                metric_name: metric_name.clone(),
+                                metric_type: "Sum".to_string(),
+                                value: format_number_value(&dp.value),
+                                unit: unit.clone(),
+                                description: description.clone(),
+                                attributes: dp.attributes.clone(),
+                                resource_attributes: resource_attrs.clone(),
+                            });
                         }
                     }
                     Some(metric::Data::Histogram(h)) => {
-                        if let Some(dp) = h.data_points.first() {
-                            let val =
-                                format!("count={} sum={:.3}", dp.count, dp.sum.unwrap_or(0.0));
-                            ("Histogram", val, dp.time_unix_nano, dp.attributes.clone())
-                        } else {
-                            ("Histogram", "".to_string(), 0, vec![])
+                        for dp in &h.data_points {
+                            rows.push(MetricRow {
+                                time_nano: dp.time_unix_nano,
+                                service_name: service.clone(),
+                                metric_name: metric_name.clone(),
+                                metric_type: "Histogram".to_string(),
+                                value: format!(
+                                    "count={} sum={:.3}",
+                                    dp.count,
+                                    dp.sum.unwrap_or(0.0)
+                                ),
+                                unit: unit.clone(),
+                                description: description.clone(),
+                                attributes: dp.attributes.clone(),
+                                resource_attributes: resource_attrs.clone(),
+                            });
                         }
                     }
                     Some(metric::Data::ExponentialHistogram(h)) => {
-                        if let Some(dp) = h.data_points.first() {
-                            let val =
-                                format!("count={} sum={:.3}", dp.count, dp.sum.unwrap_or(0.0));
-                            (
-                                "ExpHistogram",
-                                val,
-                                dp.time_unix_nano,
-                                dp.attributes.clone(),
-                            )
-                        } else {
-                            ("ExpHistogram", "".to_string(), 0, vec![])
+                        for dp in &h.data_points {
+                            rows.push(MetricRow {
+                                time_nano: dp.time_unix_nano,
+                                service_name: service.clone(),
+                                metric_name: metric_name.clone(),
+                                metric_type: "ExpHistogram".to_string(),
+                                value: format!(
+                                    "count={} sum={:.3}",
+                                    dp.count,
+                                    dp.sum.unwrap_or(0.0)
+                                ),
+                                unit: unit.clone(),
+                                description: description.clone(),
+                                attributes: dp.attributes.clone(),
+                                resource_attributes: resource_attrs.clone(),
+                            });
                         }
                     }
                     Some(metric::Data::Summary(s)) => {
-                        if let Some(dp) = s.data_points.first() {
-                            let val = format!("count={} sum={:.3}", dp.count, dp.sum);
-                            ("Summary", val, dp.time_unix_nano, dp.attributes.clone())
-                        } else {
-                            ("Summary", "".to_string(), 0, vec![])
+                        for dp in &s.data_points {
+                            rows.push(MetricRow {
+                                time_nano: dp.time_unix_nano,
+                                service_name: service.clone(),
+                                metric_name: metric_name.clone(),
+                                metric_type: "Summary".to_string(),
+                                value: format!("count={} sum={:.3}", dp.count, dp.sum),
+                                unit: unit.clone(),
+                                description: description.clone(),
+                                attributes: dp.attributes.clone(),
+                                resource_attributes: resource_attrs.clone(),
+                            });
                         }
                     }
-                    None => ("Unknown", "".to_string(), 0, vec![]),
+                    None => {}
                 };
-                rows.push(MetricRow {
-                    time_nano,
-                    service_name: service.clone(),
-                    metric_name: m.name.clone(),
-                    metric_type: mtype.to_string(),
-                    value: value_str,
-                    unit: m.unit.clone(),
-                    description: m.description.clone(),
-                    attributes: dp_attrs,
-                    resource_attributes: resource_attrs.clone(),
-                });
             }
         }
     }
