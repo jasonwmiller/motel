@@ -1,4 +1,5 @@
 use std::collections::{HashSet, VecDeque};
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use tokio::sync::{RwLock, broadcast};
 
@@ -34,6 +35,13 @@ pub struct Store {
 
     /// Optional persistence backend (write-through on insert, clear on clear).
     pub persist: Option<SharedPersistBackend>,
+
+    /// Fraction of traces to keep (0.0-1.0). 1.0 = keep all.
+    pub sample_rate: f64,
+    /// Service names that bypass sampling (always kept).
+    pub sample_always: HashSet<String>,
+    /// Counter of spans dropped by sampling, for status reporting.
+    pub traces_dropped: u64,
 }
 
 impl Store {
@@ -51,6 +59,17 @@ impl Store {
         max_metrics: usize,
         persist: Option<SharedPersistBackend>,
     ) -> (Self, broadcast::Receiver<StoreEvent>) {
+        Self::new_with_sampling(max_traces, max_logs, max_metrics, persist, 1.0, vec![])
+    }
+
+    pub fn new_with_sampling(
+        max_traces: usize,
+        max_logs: usize,
+        max_metrics: usize,
+        persist: Option<SharedPersistBackend>,
+        sample_rate: f64,
+        sample_always: Vec<String>,
+    ) -> (Self, broadcast::Receiver<StoreEvent>) {
         let (event_tx, event_rx) = broadcast::channel(1024);
         let store = Self {
             traces: VecDeque::new(),
@@ -63,6 +82,9 @@ impl Store {
             max_metrics,
             event_tx,
             persist,
+            sample_rate,
+            sample_always: sample_always.into_iter().collect(),
+            traces_dropped: 0,
         };
         (store, event_rx)
     }
@@ -85,8 +107,33 @@ impl Store {
         (Arc::new(RwLock::new(store)), rx)
     }
 
+    pub fn new_shared_with_sampling(
+        max_traces: usize,
+        max_logs: usize,
+        max_metrics: usize,
+        persist: Option<SharedPersistBackend>,
+        sample_rate: f64,
+        sample_always: Vec<String>,
+    ) -> (SharedStore, broadcast::Receiver<StoreEvent>) {
+        let (store, rx) = Self::new_with_sampling(
+            max_traces,
+            max_logs,
+            max_metrics,
+            persist,
+            sample_rate,
+            sample_always,
+        );
+        (Arc::new(RwLock::new(store)), rx)
+    }
+
     #[tracing::instrument(skip_all, fields(count = resource_spans.len()))]
     pub fn insert_traces(&mut self, resource_spans: Vec<ResourceSpans>) {
+        // Apply sampling filter
+        let resource_spans = self.apply_sampling(resource_spans);
+        if resource_spans.is_empty() {
+            return;
+        }
+
         // Write-through to persistence (spawned as background task)
         if let Some(ref persist) = self.persist {
             let persist = persist.clone();
@@ -98,11 +145,17 @@ impl Store {
             });
         }
 
-        self.insert_traces_no_persist(resource_spans);
+        self.insert_traces_inner(resource_spans);
     }
 
     /// Insert traces without writing to persistence (used during startup load).
+    /// Sampling is NOT applied here since persisted data was already sampled.
     pub fn insert_traces_no_persist(&mut self, resource_spans: Vec<ResourceSpans>) {
+        self.insert_traces_inner(resource_spans);
+    }
+
+    /// Core insertion logic shared by insert_traces and insert_traces_no_persist.
+    fn insert_traces_inner(&mut self, resource_spans: Vec<ResourceSpans>) {
         for rs in &resource_spans {
             // Extract unique trace IDs from this ResourceSpans
             for scope_spans in &rs.scope_spans {
@@ -133,6 +186,75 @@ impl Store {
         }
 
         let _ = self.event_tx.send(event);
+    }
+
+    /// Apply trace-level sampling to incoming ResourceSpans.
+    /// Returns the filtered list (may be empty if all were dropped).
+    /// Fast path: if sample_rate >= 1.0, returns input unchanged.
+    fn apply_sampling(&mut self, resource_spans: Vec<ResourceSpans>) -> Vec<ResourceSpans> {
+        if self.sample_rate >= 1.0 {
+            return resource_spans;
+        }
+
+        let mut sampled: Vec<ResourceSpans> = Vec::new();
+        let mut dropped_count: u64 = 0;
+
+        for mut rs in resource_spans {
+            // Check if this ResourceSpans belongs to an always-sampled service
+            let is_always = !self.sample_always.is_empty()
+                && rs.resource.as_ref().is_some_and(|r| {
+                    r.attributes.iter().any(|kv| {
+                        kv.key == "service.name"
+                            && kv.value.as_ref().is_some_and(|v| {
+                                if let Some(
+                                    crate::otel::common::v1::any_value::Value::StringValue(s),
+                                ) = &v.value
+                                {
+                                    self.sample_always.contains(s)
+                                } else {
+                                    false
+                                }
+                            })
+                    })
+                });
+
+            if is_always {
+                sampled.push(rs);
+                continue;
+            }
+
+            // Filter spans within each ResourceSpans by trace_id sampling
+            for ss in &mut rs.scope_spans {
+                let before = ss.spans.len();
+                ss.spans.retain(|span| self.should_sample(&span.trace_id));
+                dropped_count += (before - ss.spans.len()) as u64;
+            }
+            rs.scope_spans.retain(|ss| !ss.spans.is_empty());
+            if !rs.scope_spans.is_empty() {
+                sampled.push(rs);
+            }
+        }
+
+        self.traces_dropped += dropped_count;
+        sampled
+    }
+
+    /// Deterministic sampling decision based on trace_id hash.
+    /// The same trace_id always produces the same decision, so all spans
+    /// belonging to a trace are either all kept or all dropped.
+    pub fn should_sample(&self, trace_id: &[u8]) -> bool {
+        if self.sample_rate >= 1.0 {
+            return true;
+        }
+        if self.sample_rate <= 0.0 {
+            return false;
+        }
+        let mut hasher = std::hash::DefaultHasher::new();
+        trace_id.hash(&mut hasher);
+        let hash = hasher.finish();
+        // Map hash to [0.0, 1.0) range
+        let normalized = (hash as f64) / (u64::MAX as f64);
+        normalized < self.sample_rate
     }
 
     #[tracing::instrument(skip_all, fields(count = resource_logs.len()))]
@@ -344,5 +466,149 @@ pub(crate) mod tests {
         assert_eq!(store.clear_traces(), 1);
         assert_eq!(store.trace_count(), 0);
         assert_eq!(store.span_count(), 0);
+    }
+
+    fn make_resource_spans_with_service(
+        trace_id: &[u8],
+        span_name: &str,
+        service_name: &str,
+    ) -> ResourceSpans {
+        ResourceSpans {
+            resource: Some(Resource {
+                attributes: vec![KeyValue {
+                    key: "service.name".into(),
+                    value: Some(crate::otel::common::v1::AnyValue {
+                        value: Some(crate::otel::common::v1::any_value::Value::StringValue(
+                            service_name.into(),
+                        )),
+                    }),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }),
+            scope_spans: vec![ScopeSpans {
+                scope: None,
+                spans: vec![Span {
+                    trace_id: trace_id.to_vec(),
+                    span_id: vec![1, 2, 3, 4, 5, 6, 7, 8],
+                    parent_span_id: vec![],
+                    name: span_name.to_string(),
+                    kind: 1,
+                    start_time_unix_nano: 1000000000,
+                    end_time_unix_nano: 2000000000,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_sample_rate_1_0_keeps_all() {
+        let (mut store, _rx) = Store::new_with_sampling(100, 100, 100, None, 1.0, vec![]);
+        for i in 0..10u8 {
+            store.insert_traces(vec![make_resource_spans(&[i; 16], "span")]);
+        }
+        assert_eq!(store.trace_count(), 10);
+        assert_eq!(store.traces_dropped, 0);
+    }
+
+    #[test]
+    fn test_sample_rate_0_0_drops_all() {
+        let (mut store, _rx) = Store::new_with_sampling(100, 100, 100, None, 0.0, vec![]);
+        for i in 0..10u8 {
+            store.insert_traces(vec![make_resource_spans(&[i; 16], "span")]);
+        }
+        assert_eq!(store.trace_count(), 0);
+        assert_eq!(store.span_count(), 0);
+        assert_eq!(store.traces_dropped, 10);
+    }
+
+    #[test]
+    fn test_sample_rate_deterministic() {
+        // Same trace_id should always get the same sampling decision
+        let (mut store1, _rx1) = Store::new_with_sampling(100, 100, 100, None, 0.5, vec![]);
+        let (mut store2, _rx2) = Store::new_with_sampling(100, 100, 100, None, 0.5, vec![]);
+        let tid = [42u8; 16];
+        store1.insert_traces(vec![make_resource_spans(&tid, "span")]);
+        store2.insert_traces(vec![make_resource_spans(&tid, "span")]);
+        assert_eq!(store1.trace_count(), store2.trace_count());
+    }
+
+    #[test]
+    fn test_sample_rate_approximate() {
+        // With enough traces, ~50% should be kept at rate 0.5
+        let (mut store, _rx) = Store::new_with_sampling(100000, 100, 100, None, 0.5, vec![]);
+        for i in 0..1000u32 {
+            let tid: Vec<u8> = i.to_be_bytes().repeat(4); // 16 bytes
+            store.insert_traces(vec![make_resource_spans(&tid, "span")]);
+        }
+        let kept = store.trace_count();
+        // Allow 40-60% range for statistical tolerance
+        assert!(
+            kept > 400 && kept < 600,
+            "kept {kept} out of 1000, expected ~500"
+        );
+    }
+
+    #[test]
+    fn test_sample_rate_logs_not_sampled() {
+        use crate::otel::logs::v1::{LogRecord, ResourceLogs, ScopeLogs};
+
+        let (mut store, _rx) = Store::new_with_sampling(100, 100, 100, None, 0.0, vec![]);
+        // Even with 0% trace sampling, logs should be stored
+        store.insert_logs(vec![ResourceLogs {
+            resource: None,
+            scope_logs: vec![ScopeLogs {
+                scope: None,
+                log_records: vec![LogRecord {
+                    severity_text: "INFO".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }]);
+        assert_eq!(store.log_count(), 1);
+    }
+
+    #[test]
+    fn test_should_sample_consistency() {
+        // A trace_id should always get the same result
+        let (store, _rx) = Store::new_with_sampling(100, 100, 100, None, 0.5, vec![]);
+        let tid = [7u8; 16];
+        let result1 = store.should_sample(&tid);
+        let result2 = store.should_sample(&tid);
+        assert_eq!(result1, result2);
+    }
+
+    #[test]
+    fn test_sample_always_bypasses_sampling() {
+        let (mut store, _rx) = Store::new_with_sampling(
+            100,
+            100,
+            100,
+            None,
+            0.0,
+            vec!["critical-service".to_string()],
+        );
+        // Traces from critical-service should be kept even at 0% sampling
+        store.insert_traces(vec![make_resource_spans_with_service(
+            &[1; 16],
+            "span",
+            "critical-service",
+        )]);
+        assert_eq!(store.trace_count(), 1);
+        assert_eq!(store.traces_dropped, 0);
+
+        // Traces from other services should be dropped
+        store.insert_traces(vec![make_resource_spans_with_service(
+            &[2; 16],
+            "span",
+            "other-service",
+        )]);
+        assert_eq!(store.trace_count(), 1);
+        assert_eq!(store.traces_dropped, 1);
     }
 }

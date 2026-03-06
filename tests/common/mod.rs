@@ -94,19 +94,30 @@ pub fn get_available_port() -> u16 {
 /// Start a motel server as a child process with the given ports.
 /// Returns the `Child` handle so the caller can kill it when the test finishes.
 pub fn start_server_process(grpc_port: u16, http_port: u16, query_port: u16) -> Child {
+    start_server_process_with_args(grpc_port, http_port, query_port, &[])
+}
+
+/// Start a motel server with extra CLI arguments.
+pub fn start_server_process_with_args(
+    grpc_port: u16,
+    http_port: u16,
+    query_port: u16,
+    extra_args: &[&str],
+) -> Child {
     let bin = env!("CARGO_BIN_EXE_motel");
-    Command::new(bin)
-        .args([
-            "server",
-            "--no-tui",
-            "--grpc-addr",
-            &format!("0.0.0.0:{grpc_port}"),
-            "--http-addr",
-            &format!("0.0.0.0:{http_port}"),
-            "--query-addr",
-            &format!("0.0.0.0:{query_port}"),
-        ])
-        .stdout(std::process::Stdio::null())
+    let mut cmd = Command::new(bin);
+    cmd.args([
+        "server",
+        "--no-tui",
+        "--grpc-addr",
+        &format!("0.0.0.0:{grpc_port}"),
+        "--http-addr",
+        &format!("0.0.0.0:{http_port}"),
+        "--query-addr",
+        &format!("0.0.0.0:{query_port}"),
+    ]);
+    cmd.args(extra_args);
+    cmd.stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
         .expect("failed to start motel server")
@@ -160,26 +171,7 @@ impl ServerGuard {
         let grpc_port = get_available_port();
         let http_port = get_available_port();
         let query_port = get_available_port();
-        let bin = env!("CARGO_BIN_EXE_motel");
-        let mut cmd = Command::new(bin);
-        cmd.args([
-            "server",
-            "--no-tui",
-            "--grpc-addr",
-            &format!("0.0.0.0:{grpc_port}"),
-            "--http-addr",
-            &format!("0.0.0.0:{http_port}"),
-            "--query-addr",
-            &format!("0.0.0.0:{query_port}"),
-        ]);
-        for arg in extra_args {
-            cmd.arg(arg);
-        }
-        let child = cmd
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .expect("failed to start motel server");
+        let child = start_server_process_with_args(grpc_port, http_port, query_port, extra_args);
         wait_for_server(query_port).await;
         Self {
             child,

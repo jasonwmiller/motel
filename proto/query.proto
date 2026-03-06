@@ -122,6 +122,8 @@ message StatusResponse {
   int64 span_count = 2;
   int64 log_count = 3;
   int64 metric_count = 4;
+  double sample_rate = 5;
+  int64 traces_dropped = 6;
 }
 
 message ShutdownRequest {}
