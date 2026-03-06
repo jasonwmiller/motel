@@ -370,6 +370,8 @@ impl QueryService for QueryServiceImpl {
             span_count: store.span_count() as i64,
             log_count: store.log_count() as i64,
             metric_count: store.metric_count() as i64,
+            sample_rate: store.sample_rate,
+            traces_dropped: store.traces_dropped as i64,
             ..Default::default()
         }))
     }

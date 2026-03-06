@@ -489,12 +489,17 @@ async fn test_latency_sql_query() {
         .expect("latency sql query")
         .into_inner();
 
-    assert!(!resp.rows.is_empty(), "Should find duration data for span-alpha");
+    assert!(
+        !resp.rows.is_empty(),
+        "Should find duration data for span-alpha"
+    );
     // Each row should have exactly one value (duration_ns)
     for row in &resp.rows {
         assert_eq!(row.values.len(), 1, "expected single duration_ns column");
         // The value should be parseable as an integer
-        let val: i64 = row.values[0].parse().expect("duration_ns should be an integer");
+        let val: i64 = row.values[0]
+            .parse()
+            .expect("duration_ns should be an integer");
         assert!(val >= 0, "duration should be non-negative");
     }
 }
@@ -770,4 +775,65 @@ async fn test_follow_metrics() {
         .expect("stream ended unexpectedly");
 
     assert_eq!(msg.resource_metrics.len(), 1);
+}
+
+// ===========================================================================
+// Sampling tests
+// ===========================================================================
+
+/// Server with --sample-rate 0.0 drops all traces but status reports them.
+#[tokio::test]
+async fn test_server_sample_rate_zero_drops_all() {
+    let server = ServerGuard::start_with_args(&["--sample-rate", "0.0"]).await;
+
+    // Ingest traces
+    ingest_test_traces(&server).await;
+
+    // Also ingest logs to verify they are NOT sampled
+    ingest_test_logs(&server).await;
+
+    // Check status
+    let mut client = QueryServiceClient::connect(server.query_addr())
+        .await
+        .expect("connect query client");
+
+    let resp = client
+        .status(StatusRequest {})
+        .await
+        .expect("status")
+        .into_inner();
+
+    assert_eq!(resp.trace_count, 0, "all traces should be dropped");
+    assert_eq!(resp.span_count, 0, "all spans should be dropped");
+    assert!(resp.traces_dropped > 0, "should report dropped spans");
+    assert!(
+        (resp.sample_rate - 0.0).abs() < f64::EPSILON,
+        "sample_rate should be 0.0"
+    );
+    // Logs should NOT be sampled
+    assert_eq!(resp.log_count, 2, "logs should not be sampled");
+}
+
+/// Server with default sample rate (1.0) keeps all traces.
+#[tokio::test]
+async fn test_server_default_sample_rate_keeps_all() {
+    let server = ServerGuard::start().await;
+    ingest_test_traces(&server).await;
+
+    let mut client = QueryServiceClient::connect(server.query_addr())
+        .await
+        .expect("connect query client");
+
+    let resp = client
+        .status(StatusRequest {})
+        .await
+        .expect("status")
+        .into_inner();
+
+    assert_eq!(resp.trace_count, 3, "all traces should be kept");
+    assert_eq!(resp.traces_dropped, 0, "nothing should be dropped");
+    assert!(
+        (resp.sample_rate - 1.0).abs() < f64::EPSILON,
+        "sample_rate should be 1.0"
+    );
 }

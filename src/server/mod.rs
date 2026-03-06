@@ -49,12 +49,14 @@ pub async fn run(args: ResolvedServerArgs) -> anyhow::Result<()> {
         None
     };
 
-    // Create shared store with optional persistence backend
-    let (store, _event_rx) = Store::new_shared_with_persist(
+    // Create shared store with optional persistence backend and sampling
+    let (store, _event_rx) = Store::new_shared_with_sampling(
         args.max_traces as usize,
         args.max_logs as usize,
         args.max_metrics as usize,
         persist.clone(),
+        args.sample_rate,
+        args.sample_always.clone(),
     );
 
     // Load persisted data on startup
@@ -80,12 +82,6 @@ pub async fn run(args: ResolvedServerArgs) -> anyhow::Result<()> {
             s.insert_metrics_no_persist(metrics);
         }
     }
-    // Create shared store
-    let (store, _event_rx) = Store::new_shared(
-        args.max_traces as usize,
-        args.max_logs as usize,
-        args.max_metrics as usize,
-    );
 
     // Get the broadcast sender for event subscriptions
     let event_tx = store.read().await.event_tx.clone();

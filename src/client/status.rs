@@ -17,6 +17,13 @@ pub async fn run(args: ResolvedStatusArgs) -> Result<()> {
     println!("Traces:  {} ({} spans)", resp.trace_count, resp.span_count);
     println!("Logs:    {}", resp.log_count);
     println!("Metrics: {}", resp.metric_count);
+    if resp.sample_rate < 1.0 {
+        println!(
+            "Sample:  {:.1}% (dropped {} spans)",
+            resp.sample_rate * 100.0,
+            resp.traces_dropped
+        );
+    }
 
     Ok(())
 }

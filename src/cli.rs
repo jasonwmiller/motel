@@ -86,6 +86,13 @@ pub struct ServerArgs {
     /// Persistence format: sqlite (default) or parquet
     #[arg(long, default_value = "sqlite")]
     pub persist_format: PersistFormat,
+    /// Fraction of traces to store (0.0-1.0). 1.0 = store all, 0.1 = store ~10%.
+    /// Sampling is by trace_id hash so all spans of a sampled trace are kept.
+    #[arg(long, default_value = "1.0", value_parser = parse_sample_rate)]
+    pub sample_rate: f64,
+    /// Service names that should never be sampled (always kept)
+    #[arg(long)]
+    pub sample_always: Vec<String>,
     /// Enable web UI dashboard
     #[arg(long)]
     pub web: bool,
@@ -128,6 +135,8 @@ pub struct ResolvedServerArgs {
     pub max_metrics: u64,
     pub persist: Option<String>,
     pub persist_format: PersistFormat,
+    pub sample_rate: f64,
+    pub sample_always: Vec<String>,
     pub web: bool,
     pub web_addr: String,
     pub forward_to: Vec<String>,
@@ -137,6 +146,15 @@ pub struct ResolvedServerArgs {
     pub sink_format: SinkFormat,
     pub sink_max_size: u64,
     pub sink_rotate_interval: String,
+}
+
+/// Validate sample_rate is in [0.0, 1.0]
+fn parse_sample_rate(s: &str) -> Result<f64, String> {
+    let rate: f64 = s.parse().map_err(|e| format!("invalid number: {e}"))?;
+    if !(0.0..=1.0).contains(&rate) {
+        return Err("sample-rate must be between 0.0 and 1.0".into());
+    }
+    Ok(rate)
 }
 
 impl ServerArgs {
@@ -163,6 +181,8 @@ impl ServerArgs {
             max_metrics: self.max_metrics.or(config.max_metrics).unwrap_or(100000),
             persist: self.persist,
             persist_format: self.persist_format,
+            sample_rate: self.sample_rate,
+            sample_always: self.sample_always,
             web: self.web,
             web_addr: self.web_addr,
             forward_to: self.forward_to,
@@ -818,6 +838,8 @@ mod tests {
             max_metrics: None,
             persist: None,
             persist_format: PersistFormat::Sqlite,
+            sample_rate: 1.0,
+            sample_always: vec![],
             web: false,
             web_addr: "0.0.0.0:4320".to_string(),
             forward_to: vec![],
@@ -862,6 +884,8 @@ mod tests {
             max_metrics: None,
             persist: None,
             persist_format: PersistFormat::Sqlite,
+            sample_rate: 1.0,
+            sample_always: vec![],
             web: false,
             web_addr: "0.0.0.0:4320".to_string(),
             forward_to: vec![],
