@@ -32,6 +32,7 @@ cargo run -- init --lang python      # Python OTLP setup snippet
 cargo run -- init --lang rust        # Rust OTLP setup snippet
 cargo run -- init --lang go          # Go OTLP setup snippet
 cargo run -- init --lang java        # Java agent setup snippet
+cargo run -- import traces.jsonl     # Import data from files (JSONL or OTLP protobuf)
 cargo run -- skill-install           # Install Claude Code skill for current project
 cargo run -- skill-install --global  # Install skill globally
 ```
@@ -42,7 +43,7 @@ cargo run -- skill-install --global  # Install skill globally
 
 - **`src/store.rs`** — Central in-memory store (`SharedStore = Arc<RwLock<Store>>`). All signal types use `VecDeque` with FIFO eviction. Traces are evicted by `trace_id` when `max_traces` is exceeded.
 - **`src/server/`** — Three listeners: `otlp_grpc.rs` (standard OTLP TraceService/LogsService/MetricsService), `otlp_http.rs` (Axum `/v1/traces`, `/v1/logs`, `/v1/metrics`), `query_grpc.rs` (custom QueryService with streaming follow support and SQL query execution).
-- **`src/client/`** — CLI query commands. Each submodule (trace, log, metrics, sql, clear) builds gRPC requests and formats output (Text/JSONL/CSV). `view.rs` queries all existing data on connect, then subscribes to Follow streams for new data, piping both into a local Store to drive the TUI. `mod.rs` contains shared utilities.
+- **`src/client/`** — CLI query commands. Each submodule (trace, log, metrics, sql, clear) builds gRPC requests and formats output (Text/JSONL/CSV). `view.rs` queries all existing data on connect, then subscribes to Follow streams for new data, piping both into a local Store to drive the TUI. `import.rs` reads files (JSONL or OTLP protobuf) and sends data to a server via standard OTLP gRPC clients. `mod.rs` contains shared utilities.
 - **`src/query/`** — SQL query engine built on DataFusion:
   - `datafusion_ctx.rs` — Creates a `SessionContext` with three registered tables (`traces`, `logs`, `metrics`). One context is created per server lifetime and reused across queries.
   - `table_provider.rs` — `OtelTable` implements DataFusion's `TableProvider`. On each `scan()`, it acquires a read lock on the store, converts data to Arrow `RecordBatch` via `arrow_convert`, then releases the lock before query execution.
@@ -60,6 +61,7 @@ cargo run -- skill-install --global  # Install skill globally
 - **`src/client/init.rs`** — `init` subcommand: generates OTLP config files (.env or language-specific snippets for Node, Python, Rust, Go, Java). Local-only, no server connection.
 - **`src/client/service_map.rs`** — `service-map` subcommand: generates service dependency graph from trace data via SQL self-join.
 - **`src/cli.rs`** — clap derive command definitions (Server, View, Traces, Logs, Metrics, Sql, ServiceMap, Clear, Status, Shutdown, SkillInstall, Init). Output formats: `Text`, `Table`, `Jsonl`, `Csv`.
+- **`src/cli.rs`** — clap derive command definitions (Server, View, Traces, Logs, Metrics, Sql, Clear, Status, Shutdown, Import, SkillInstall). Output formats: `Text`, `Table`, `Jsonl`, `Csv`. Import formats: `Jsonl`, `OtlpProto`. Signal types: `Traces`, `Logs`, `Metrics`.
 - **`proto/query.proto`** — Custom query/follow/clear/status/shutdown/SQL gRPC API. Standard OTLP protos are vendored in `proto/opentelemetry-proto/` (originally from OpenTelemetry v1.9.0, Apache 2.0 licensed).
 - **`build.rs`** — Compiles protobuf files via `tonic_prost_build`.
 

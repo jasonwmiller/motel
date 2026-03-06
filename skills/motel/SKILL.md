@@ -132,6 +132,8 @@ motel view                    # Attach TUI to a running server
 motel status                  # Show trace/log/metric counts
 motel clear                   # Clear all stored data
 motel clear traces            # Clear only traces
+motel import traces.jsonl     # Import JSONL data (auto-detects signal from filename)
+motel import data.pb --format otlp-proto --signal traces  # Import protobuf binary
 motel shutdown                # Remotely shutdown a running server
 motel init                    # Generate .env with OTEL env vars (stdout)
 motel init -o .env            # Write .env file to disk

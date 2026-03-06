@@ -241,8 +241,7 @@ motel service-map --since 5m
 Example ASCII output:
 ```
 Service Dependency Map
-===============
-  frontend --(120 calls, avg 45.2ms)--> api-gateway
+========  frontend --(120 calls, avg 45.2ms)--> api-gateway
   api-gateway --(85 calls, avg 12.3ms)--> user-service
   api-gateway --(42 calls, avg 8.7ms)--> payment-service
   payment-service --(42 calls, avg 3.1ms)--> database
@@ -272,6 +271,32 @@ motel replay --target http://other:4317 --service myapp
 # Dry run to see what would be replayed
 motel replay --target http://other:4317 --dry-run
 ```
+## Import
+
+Load telemetry data from files into a running motel server. Supports JSONL (motel's own export format) and OTLP protobuf binary.
+
+```bash
+# Import JSONL traces (from motel's own export)
+motel import traces.jsonl --signal traces
+
+# Import OTLP protobuf binary
+motel import traces.pb --format otlp-proto --signal traces
+
+# Import with auto-detection (filename and extension based)
+motel import traces.jsonl
+
+# Import multiple files
+motel import traces-1.jsonl traces-2.jsonl
+
+# Export then re-import workflow
+motel traces --output jsonl > traces.jsonl
+motel import traces.jsonl --signal traces
+
+# Import to a non-default server
+motel import data.jsonl --signal logs --addr http://localhost:4317
+```
+
+Format is auto-detected from file extension (`.jsonl`/`.json`/`.ndjson` for JSONL, `.pb`/`.proto`/`.bin` for protobuf). Signal type is auto-detected from filename (e.g., `traces.jsonl` -> traces, `logs.jsonl` -> logs). Use `--format` and `--signal` to override.
 
 ## Other Commands
 
