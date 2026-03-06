@@ -62,6 +62,10 @@ motel traces --service myapp --since 5m
 motel logs --severity ERROR
 motel metrics --name http.request.duration
 
+# Latency histogram
+motel latency GET /api/users --service myapp --since 1h
+motel latency db.query --buckets 10 -o csv
+
 # SQL (DataFusion)
 motel sql "SELECT span_name, COUNT(*) as n, AVG(duration_ns)/1e6 as avg_ms
            FROM traces GROUP BY span_name ORDER BY avg_ms DESC"

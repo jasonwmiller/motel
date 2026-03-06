@@ -38,6 +38,8 @@ pub enum Command {
     Replay(ReplayArgs),
     /// Import telemetry data from files
     Import(ImportArgs),
+    /// Show latency histogram for a span name
+    Latency(LatencyArgs),
     /// Install Claude Code skill
     SkillInstall(SkillInstallArgs),
     /// Generate OTLP configuration for your project
@@ -248,6 +250,30 @@ pub struct StatusArgs {
 
 #[derive(clap::Args, Clone)]
 pub struct ShutdownArgs {
+    /// Query service address
+    #[arg(long, default_value = "http://localhost:4319")]
+    pub addr: String,
+}
+
+#[derive(clap::Args, Clone)]
+pub struct LatencyArgs {
+    /// Span name to analyze
+    pub span_name: String,
+    /// Filter by service name
+    #[arg(long)]
+    pub service: Option<String>,
+    /// Filter by start time (relative: 30s, 5m, 1h, 2d or RFC3339)
+    #[arg(long)]
+    pub since: Option<String>,
+    /// Number of histogram buckets
+    #[arg(long, default_value = "20")]
+    pub buckets: usize,
+    /// Output format (text shows histogram, jsonl/csv export raw data)
+    #[arg(long, short = 'o', default_value = "text")]
+    pub output: OutputFormat,
+    /// Show the trace ID of this query request
+    #[arg(long)]
+    pub show_trace_id: bool,
     /// Query service address
     #[arg(long, default_value = "http://localhost:4319")]
     pub addr: String,

@@ -468,6 +468,38 @@ async fn test_sql_metrics_table() {
 }
 
 // ===========================================================================
+// Latency query tests
+// ===========================================================================
+
+/// Verify the SQL query underlying `motel latency` returns duration data.
+#[tokio::test]
+async fn test_latency_sql_query() {
+    let server = ServerGuard::start().await;
+    ingest_test_traces(&server).await;
+
+    let mut client = QueryServiceClient::connect(server.query_addr())
+        .await
+        .expect("connect query client");
+
+    let resp = client
+        .sql_query(SqlQueryRequest {
+            query: "SELECT duration_ns FROM traces WHERE span_name = 'span-alpha' ORDER BY duration_ns ASC".into(),
+        })
+        .await
+        .expect("latency sql query")
+        .into_inner();
+
+    assert!(!resp.rows.is_empty(), "Should find duration data for span-alpha");
+    // Each row should have exactly one value (duration_ns)
+    for row in &resp.rows {
+        assert_eq!(row.values.len(), 1, "expected single duration_ns column");
+        // The value should be parseable as an integer
+        let val: i64 = row.values[0].parse().expect("duration_ns should be an integer");
+        assert!(val >= 0, "duration should be non-negative");
+    }
+}
+
+// ===========================================================================
 // Clear tests
 // ===========================================================================
 
