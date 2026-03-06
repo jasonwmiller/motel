@@ -28,6 +28,7 @@ cargo run -- metrics --follow        # Stream new metrics (tail -f style)
 cargo run -- sql "SELECT * FROM traces"  # Run SQL query
 cargo run -- service-map             # Show service dependency graph (ASCII)
 cargo run -- service-map --format mermaid  # Show service dependency graph (Mermaid)
+cargo run -- latency <span_name>         # Show latency histogram for a span
 cargo run -- status                  # Check server status (trace/log/metric counts)
 cargo run -- shutdown                # Remotely shutdown a running server
 cargo run -- init                    # Generate .env with OTEL env vars
@@ -49,6 +50,7 @@ cargo run -- skill-install --global  # Install skill globally
 - **`src/server/`** — Three listeners: `otlp_grpc.rs` (standard OTLP TraceService/LogsService/MetricsService), `otlp_http.rs` (Axum `/v1/traces`, `/v1/logs`, `/v1/metrics`), `query_grpc.rs` (custom QueryService with streaming follow support and SQL query execution).
 - **`src/client/`** — CLI query commands. Each submodule (trace, log, metrics, sql, clear) builds gRPC requests and formats output (Text/JSONL/CSV). `view.rs` queries all existing data on connect, then subscribes to Follow streams for new data, piping both into a local Store to drive the TUI. `import.rs` reads files (JSONL or OTLP protobuf) and sends data to a server via standard OTLP gRPC clients. `mod.rs` contains shared utilities.
 - **`src/client/`** — CLI query commands. Each submodule (trace, log, metrics, sql, clear) builds gRPC requests and formats output (Text/JSONL/CSV). `view.rs` supports connecting to multiple servers simultaneously (`--addr` can be specified multiple times), merging all data into a single local Store to drive the TUI. Each item is tagged with a `motel.source` resource attribute identifying its origin server. `mod.rs` contains shared utilities.
+- **`src/client/`** — CLI query commands. Each submodule (trace, log, metrics, sql, latency, clear) builds gRPC requests and formats output (Text/JSONL/CSV). `view.rs` queries all existing data on connect, then subscribes to Follow streams for new data, piping both into a local Store to drive the TUI. `mod.rs` contains shared utilities.
 - **`src/query/`** — SQL query engine built on DataFusion:
   - `datafusion_ctx.rs` — Creates a `SessionContext` with three registered tables (`traces`, `logs`, `metrics`). One context is created per server lifetime and reused across queries.
   - `table_provider.rs` — `OtelTable` implements DataFusion's `TableProvider`. On each `scan()`, it acquires a read lock on the store, converts data to Arrow `RecordBatch` via `arrow_convert`, then releases the lock before query execution.
@@ -67,6 +69,7 @@ cargo run -- skill-install --global  # Install skill globally
 - **`src/client/service_map.rs`** — `service-map` subcommand: generates service dependency graph from trace data via SQL self-join.
 - **`src/cli.rs`** — clap derive command definitions (Server, View, Traces, Logs, Metrics, Sql, ServiceMap, Clear, Status, Shutdown, SkillInstall, Init). Output formats: `Text`, `Table`, `Jsonl`, `Csv`.
 - **`src/cli.rs`** — clap derive command definitions (Server, View, Traces, Logs, Metrics, Sql, Clear, Status, Shutdown, Import, SkillInstall). Output formats: `Text`, `Table`, `Jsonl`, `Csv`. Import formats: `Jsonl`, `OtlpProto`. Signal types: `Traces`, `Logs`, `Metrics`.
+- **`src/cli.rs`** — clap derive command definitions (Server, View, Traces, Logs, Metrics, Sql, Latency, Clear, Status, Shutdown, SkillInstall). Output formats: `Text`, `Table`, `Jsonl`, `Csv`.
 - **`proto/query.proto`** — Custom query/follow/clear/status/shutdown/SQL gRPC API. Standard OTLP protos are vendored in `proto/opentelemetry-proto/` (originally from OpenTelemetry v1.9.0, Apache 2.0 licensed).
 - **`build.rs`** — Compiles protobuf files via `tonic_prost_build`.
 
@@ -239,6 +242,9 @@ motel sql "SELECT t1.span_name as parent, t2.span_name as child, t2.duration_ns/
 
 # Store insertion throughput
 motel sql "SELECT span_name, attributes['count'] as batch_size, duration_ns/1e6 as ms FROM traces WHERE service_name = 'motel' AND span_name LIKE 'store.insert%' ORDER BY duration_ns DESC LIMIT 10"
+
+# Latency histogram (equivalent to: motel latency sql.execute --service motel)
+motel sql "SELECT duration_ns FROM traces WHERE span_name = 'sql.execute' AND service_name = 'motel' ORDER BY duration_ns ASC"
 ```
 
 ## Commit Convention
