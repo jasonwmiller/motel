@@ -2,10 +2,14 @@ use anyhow::Result;
 
 use crate::cli::{OutputFormat, TracesArgs};
 use crate::client::{extract_request_trace_id, hex_encode, parse_attributes, print_table};
-use crate::query_proto::QueryTracesRequest;
 use crate::query_proto::query_service_client::QueryServiceClient;
+use crate::query_proto::{FollowRequest, QueryTracesRequest};
 
 pub async fn run(args: TracesArgs) -> Result<()> {
+    if args.follow {
+        return run_follow(args).await;
+    }
+
     let mut client = QueryServiceClient::connect(args.addr.clone()).await?;
 
     let attributes = parse_attributes(&args.attribute)?;
@@ -167,3 +171,113 @@ fn format_status(status: Option<&crate::otel::trace::v1::Status>) -> String {
     }
 }
 
+async fn run_follow(args: TracesArgs) -> Result<()> {
+    let mut client = QueryServiceClient::connect(args.addr.clone()).await?;
+
+    let mut stream = client
+        .follow_traces(FollowRequest::default())
+        .await?
+        .into_inner();
+
+    let mut csv_writer = if matches!(args.output, OutputFormat::Csv) {
+        let mut wtr = csv::Writer::from_writer(std::io::stdout());
+        wtr.write_record([
+            "time",
+            "service",
+            "span_name",
+            "duration_ms",
+            "trace_id",
+            "span_id",
+            "status",
+        ])?;
+        wtr.flush()?;
+        Some(wtr)
+    } else {
+        None
+    };
+
+    loop {
+        match stream.message().await {
+            Ok(Some(resp)) => {
+                for rs in &resp.resource_spans {
+                    let service_name = extract_service_name(rs);
+                    for ss in &rs.scope_spans {
+                        for span in &ss.spans {
+                            if let Some(ref svc) = args.service
+                                && &service_name != svc
+                            {
+                                continue;
+                            }
+                            if let Some(ref name) = args.span_name
+                                && &span.name != name
+                            {
+                                continue;
+                            }
+
+                            let start_ns = span.start_time_unix_nano;
+                            let end_ns = span.end_time_unix_nano;
+                            let duration_ns = end_ns.saturating_sub(start_ns);
+                            let row = SpanRow {
+                                time: format_timestamp_ns(start_ns),
+                                service: service_name.clone(),
+                                span_name: span.name.clone(),
+                                duration_ms: duration_ns as f64 / 1_000_000.0,
+                                trace_id: hex_encode(&span.trace_id),
+                                span_id: hex_encode(&span.span_id),
+                                status: format_status(span.status.as_ref()),
+                            };
+
+                            match args.output {
+                                OutputFormat::Text | OutputFormat::Table => {
+                                    println!(
+                                        "{} {} {} {:.3}ms trace_id={}",
+                                        row.time,
+                                        row.service,
+                                        row.span_name,
+                                        row.duration_ms,
+                                        row.trace_id,
+                                    );
+                                }
+                                OutputFormat::Jsonl => {
+                                    let obj = serde_json::json!({
+                                        "time": row.time,
+                                        "service": row.service,
+                                        "span_name": row.span_name,
+                                        "duration_ms": row.duration_ms,
+                                        "trace_id": row.trace_id,
+                                        "span_id": row.span_id,
+                                        "status": row.status,
+                                    });
+                                    println!("{}", serde_json::to_string(&obj)?);
+                                }
+                                OutputFormat::Csv => {
+                                    if let Some(ref mut wtr) = csv_writer {
+                                        wtr.write_record([
+                                            &row.time,
+                                            &row.service,
+                                            &row.span_name,
+                                            &format!("{:.3}", row.duration_ms),
+                                            &row.trace_id,
+                                            &row.span_id,
+                                            &row.status,
+                                        ])?;
+                                        wtr.flush()?;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(None) => {
+                eprintln!("Server closed the follow stream");
+                break;
+            }
+            Err(e) => {
+                eprintln!("Follow stream error: {}", e);
+                break;
+            }
+        }
+    }
+    Ok(())
+}

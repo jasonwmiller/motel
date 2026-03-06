@@ -84,6 +84,9 @@ pub struct TracesArgs {
     /// Filter by service name
     #[arg(long)]
     pub service: Option<String>,
+    /// Stream new traces as they arrive (like tail -f)
+    #[arg(long, short = 'F')]
+    pub follow: bool,
     /// Filter by span name
     #[arg(long)]
     pub span_name: Option<String>,
@@ -118,6 +121,9 @@ pub struct LogsArgs {
     /// Filter by service name
     #[arg(long)]
     pub service: Option<String>,
+    /// Stream new logs as they arrive (like tail -f)
+    #[arg(long, short = 'F')]
+    pub follow: bool,
     /// Filter by severity
     #[arg(long)]
     pub severity: Option<String>,
@@ -152,6 +158,9 @@ pub struct MetricsArgs {
     /// Filter by service name
     #[arg(long)]
     pub service: Option<String>,
+    /// Stream new metrics as they arrive (like tail -f)
+    #[arg(long, short = 'F')]
+    pub follow: bool,
     /// Filter by metric name
     #[arg(long)]
     pub name: Option<String>,

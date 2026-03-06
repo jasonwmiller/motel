@@ -162,6 +162,7 @@ mod tests {
     #[test]
     fn test_traces_args_basic() {
         let args = TracesArgs {
+            follow: false,
             service: Some("my-service".into()),
             span_name: None,
             trace_id: None,
@@ -182,6 +183,7 @@ mod tests {
     #[test]
     fn test_traces_args_no_filters() {
         let args = TracesArgs {
+            follow: false,
             service: None,
             span_name: None,
             trace_id: None,
@@ -203,6 +205,7 @@ mod tests {
     #[test]
     fn test_logs_args_with_severity() {
         let args = LogsArgs {
+            follow: false,
             service: None,
             severity: Some("ERROR".into()),
             body: None,
@@ -221,6 +224,7 @@ mod tests {
     #[test]
     fn test_metrics_args_with_name() {
         let args = MetricsArgs {
+            follow: false,
             service: None,
             name: Some("cpu.usage".into()),
             since: None,
@@ -238,6 +242,7 @@ mod tests {
     #[test]
     fn test_attribute_filter() {
         let args = TracesArgs {
+            follow: false,
             service: None,
             span_name: None,
             trace_id: None,
@@ -251,5 +256,45 @@ mod tests {
         };
         let sql = traces_args_to_sql(&args).unwrap();
         assert!(sql.contains(r#"attributes LIKE '%"http.method":"GET"%'"#));
+    }
+
+    #[test]
+    fn test_follow_flag_traces() {
+        use clap::Parser;
+        let cli = crate::cli::Cli::parse_from(["motel", "traces", "--follow"]);
+        match cli.command {
+            crate::cli::Command::Traces(args) => assert!(args.follow),
+            _ => panic!("expected Traces command"),
+        }
+    }
+
+    #[test]
+    fn test_follow_flag_logs() {
+        use clap::Parser;
+        let cli = crate::cli::Cli::parse_from(["motel", "logs", "--follow"]);
+        match cli.command {
+            crate::cli::Command::Logs(args) => assert!(args.follow),
+            _ => panic!("expected Logs command"),
+        }
+    }
+
+    #[test]
+    fn test_follow_flag_metrics() {
+        use clap::Parser;
+        let cli = crate::cli::Cli::parse_from(["motel", "metrics", "--follow"]);
+        match cli.command {
+            crate::cli::Command::Metrics(args) => assert!(args.follow),
+            _ => panic!("expected Metrics command"),
+        }
+    }
+
+    #[test]
+    fn test_follow_short_flag() {
+        use clap::Parser;
+        let cli = crate::cli::Cli::parse_from(["motel", "traces", "-F"]);
+        match cli.command {
+            crate::cli::Command::Traces(args) => assert!(args.follow),
+            _ => panic!("expected Traces command"),
+        }
     }
 }

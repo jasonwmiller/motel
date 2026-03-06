@@ -3,10 +3,14 @@ use anyhow::Result;
 use crate::cli::{LogsArgs, OutputFormat};
 use crate::client::trace::format_timestamp_ns;
 use crate::client::{extract_request_trace_id, parse_attributes, print_table};
-use crate::query_proto::QueryLogsRequest;
 use crate::query_proto::query_service_client::QueryServiceClient;
+use crate::query_proto::{FollowRequest, QueryLogsRequest};
 
 pub async fn run(args: LogsArgs) -> Result<()> {
+    if args.follow {
+        return run_follow(args).await;
+    }
+
     let mut client = QueryServiceClient::connect(args.addr.clone()).await?;
 
     let attributes = parse_attributes(&args.attribute)?;
@@ -131,3 +135,97 @@ fn format_any_value(v: &crate::otel::common::v1::AnyValue) -> String {
     }
 }
 
+async fn run_follow(args: LogsArgs) -> Result<()> {
+    let mut client = QueryServiceClient::connect(args.addr.clone()).await?;
+
+    let mut stream = client
+        .follow_logs(FollowRequest::default())
+        .await?
+        .into_inner();
+
+    let mut csv_writer = if matches!(args.output, OutputFormat::Csv) {
+        let mut wtr = csv::Writer::from_writer(std::io::stdout());
+        wtr.write_record(["time", "service", "severity", "body"])?;
+        wtr.flush()?;
+        Some(wtr)
+    } else {
+        None
+    };
+
+    loop {
+        match stream.message().await {
+            Ok(Some(resp)) => {
+                for rl in &resp.resource_logs {
+                    let service_name = extract_service_name(rl);
+                    for sl in &rl.scope_logs {
+                        for lr in &sl.log_records {
+                            if let Some(ref svc) = args.service
+                                && &service_name != svc
+                            {
+                                continue;
+                            }
+                            if let Some(ref sev) = args.severity {
+                                let sev_text = format!("{:?}", lr.severity_number());
+                                if !sev_text.to_uppercase().contains(&sev.to_uppercase()) {
+                                    continue;
+                                }
+                            }
+                            if let Some(ref body_filter) = args.body {
+                                let body_str =
+                                    lr.body.as_ref().map(format_any_value).unwrap_or_default();
+                                if !body_str.contains(body_filter.as_str()) {
+                                    continue;
+                                }
+                            }
+
+                            let row = LogRow {
+                                time: format_timestamp_ns(lr.time_unix_nano),
+                                service: service_name.clone(),
+                                severity: format!("{:?}", lr.severity_number()),
+                                body: lr.body.as_ref().map(format_any_value).unwrap_or_default(),
+                            };
+
+                            match args.output {
+                                OutputFormat::Text | OutputFormat::Table => {
+                                    println!(
+                                        "{} {} [{}] {}",
+                                        row.time, row.service, row.severity, row.body
+                                    );
+                                }
+                                OutputFormat::Jsonl => {
+                                    let obj = serde_json::json!({
+                                        "time": row.time,
+                                        "service": row.service,
+                                        "severity": row.severity,
+                                        "body": row.body,
+                                    });
+                                    println!("{}", serde_json::to_string(&obj)?);
+                                }
+                                OutputFormat::Csv => {
+                                    if let Some(ref mut wtr) = csv_writer {
+                                        wtr.write_record([
+                                            &row.time,
+                                            &row.service,
+                                            &row.severity,
+                                            &row.body,
+                                        ])?;
+                                        wtr.flush()?;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(None) => {
+                eprintln!("Server closed the follow stream");
+                break;
+            }
+            Err(e) => {
+                eprintln!("Follow stream error: {}", e);
+                break;
+            }
+        }
+    }
+    Ok(())
+}
