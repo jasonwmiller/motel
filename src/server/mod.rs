@@ -1,3 +1,4 @@
+pub mod forwarder;
 pub mod otlp_grpc;
 pub mod otlp_http;
 pub mod query_grpc;
@@ -89,18 +90,34 @@ pub async fn run(args: ResolvedServerArgs) -> anyhow::Result<()> {
     // Get the broadcast sender for event subscriptions
     let event_tx = store.read().await.event_tx.clone();
 
+    // Create forwarder if configured
+    let forwarder = forwarder::OtlpForwarder::new(
+        &args.forward_to,
+        &args.forward_headers,
+        args.forward_timeout,
+    );
+
+    if forwarder.is_some() {
+        tracing::info!(
+            endpoints = ?args.forward_to,
+            "OTLP forwarding enabled"
+        );
+    }
+
     // Shutdown channel from query service
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 
     // Build OTLP gRPC service
     let otlp_grpc_store = store.clone();
     let otlp_event_tx = event_tx.clone();
+    let grpc_forwarder = forwarder.clone();
     let grpc_addr = args.grpc_addr.parse().context("invalid gRPC address")?;
     let otlp_grpc_handle = tokio::spawn(async move {
         tracing::info!("OTLP gRPC listening on {}", grpc_addr);
         let otlp_server = otlp_grpc::OtlpGrpcServer {
             store: otlp_grpc_store,
             event_tx: otlp_event_tx,
+            forwarder: grpc_forwarder,
         };
         const MAX_MSG: usize = 16 * 1024 * 1024;
         Server::builder()
@@ -126,9 +143,10 @@ pub async fn run(args: ResolvedServerArgs) -> anyhow::Result<()> {
         store: store.clone(),
         session_ctx: session_ctx.clone(),
     };
+    let http_forwarder = forwarder.clone();
     let otlp_http_handle = tokio::spawn(async move {
         tracing::info!("OTLP HTTP listening on {}", http_addr);
-        let otlp_router = otlp_http::router(otlp_http_store);
+        let otlp_router = otlp_http::router(otlp_http_store, http_forwarder);
         let query_router = query_http::router(query_http_state);
         let router = otlp_router.merge(query_router);
         let listener = tokio::net::TcpListener::bind(http_addr)
@@ -171,9 +189,9 @@ pub async fn run(args: ResolvedServerArgs) -> anyhow::Result<()> {
 
     // Start web UI if enabled
     let web_handle = if args.web {
-        let web_addr: std::net::SocketAddr = args.web_addr.parse().context("invalid web address")?;
-        let web_session_ctx =
-            crate::query::datafusion_ctx::create_context(store.clone()).await?;
+        let web_addr: std::net::SocketAddr =
+            args.web_addr.parse().context("invalid web address")?;
+        let web_session_ctx = crate::query::datafusion_ctx::create_context(store.clone()).await?;
         let web_state = web::WebState {
             store: store.clone(),
             event_tx: event_tx.clone(),

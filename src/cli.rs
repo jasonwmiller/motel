@@ -92,6 +92,15 @@ pub struct ServerArgs {
     /// Web UI listen address
     #[arg(long, default_value = "0.0.0.0:4320")]
     pub web_addr: String,
+    /// Forward received OTLP data to upstream endpoint(s). Can be specified multiple times for fan-out.
+    #[arg(long, value_name = "URL")]
+    pub forward_to: Vec<String>,
+    /// Headers to include in forwarded requests (key=value). Can be specified multiple times.
+    #[arg(long, value_name = "KEY=VALUE")]
+    pub forward_headers: Vec<String>,
+    /// Timeout for forwarding requests in seconds
+    #[arg(long, default_value = "10")]
+    pub forward_timeout: u64,
 }
 
 /// Resolved server args with all defaults applied (config file + hardcoded).
@@ -109,6 +118,9 @@ pub struct ResolvedServerArgs {
     pub persist_format: PersistFormat,
     pub web: bool,
     pub web_addr: String,
+    pub forward_to: Vec<String>,
+    pub forward_headers: Vec<String>,
+    pub forward_timeout: u64,
 }
 
 impl ServerArgs {
@@ -130,19 +142,16 @@ impl ServerArgs {
                 .or_else(|| config.query_addr.clone())
                 .unwrap_or_else(|| "0.0.0.0:4319".to_string()),
             otlp_endpoint: self.otlp_endpoint.or_else(|| config.otlp_endpoint.clone()),
-            max_traces: self
-                .max_traces
-                .or(config.max_traces)
-                .unwrap_or(10000),
+            max_traces: self.max_traces.or(config.max_traces).unwrap_or(10000),
             max_logs: self.max_logs.or(config.max_logs).unwrap_or(100000),
-            max_metrics: self
-                .max_metrics
-                .or(config.max_metrics)
-                .unwrap_or(100000),
+            max_metrics: self.max_metrics.or(config.max_metrics).unwrap_or(100000),
             persist: self.persist,
             persist_format: self.persist_format,
             web: self.web,
             web_addr: self.web_addr,
+            forward_to: self.forward_to,
+            forward_headers: self.forward_headers,
+            forward_timeout: self.forward_timeout,
         }
     }
 }
@@ -783,6 +792,9 @@ mod tests {
             persist_format: PersistFormat::Sqlite,
             web: false,
             web_addr: "0.0.0.0:4320".to_string(),
+            forward_to: vec![],
+            forward_headers: vec![],
+            forward_timeout: 10,
         };
         let config = config::ServerConfig {
             grpc_addr: Some("9.9.9.9:1111".to_string()),
@@ -820,6 +832,9 @@ mod tests {
             persist_format: PersistFormat::Sqlite,
             web: false,
             web_addr: "0.0.0.0:4320".to_string(),
+            forward_to: vec![],
+            forward_headers: vec![],
+            forward_timeout: 10,
         };
         let config = config::ServerConfig::default();
         let resolved = args.resolve(&config);

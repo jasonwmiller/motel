@@ -13,12 +13,14 @@ use crate::opentelemetry::proto::collector::{
         ExportTraceServiceRequest, ExportTraceServiceResponse, trace_service_server::TraceService,
     },
 };
+use crate::server::forwarder::OtlpForwarder;
 use crate::store::{SharedStore, StoreEvent};
 
 #[derive(Clone)]
 pub struct OtlpGrpcServer {
     pub store: SharedStore,
     pub event_tx: broadcast::Sender<StoreEvent>,
+    pub forwarder: Option<OtlpForwarder>,
 }
 
 #[async_trait]
@@ -30,6 +32,9 @@ impl TraceService for OtlpGrpcServer {
     ) -> Result<Response<ExportTraceServiceResponse>, Status> {
         let req = request.into_inner();
         let resource_spans = req.resource_spans;
+        if let Some(ref fwd) = self.forwarder {
+            fwd.forward_traces(resource_spans.clone());
+        }
         self.store.write().await.insert_traces(resource_spans);
         Ok(Response::new(ExportTraceServiceResponse {
             ..Default::default()
@@ -46,6 +51,9 @@ impl LogsService for OtlpGrpcServer {
     ) -> Result<Response<ExportLogsServiceResponse>, Status> {
         let req = request.into_inner();
         let resource_logs = req.resource_logs;
+        if let Some(ref fwd) = self.forwarder {
+            fwd.forward_logs(resource_logs.clone());
+        }
         self.store.write().await.insert_logs(resource_logs);
         Ok(Response::new(ExportLogsServiceResponse {
             ..Default::default()
@@ -62,6 +70,9 @@ impl MetricsService for OtlpGrpcServer {
     ) -> Result<Response<ExportMetricsServiceResponse>, Status> {
         let req = request.into_inner();
         let resource_metrics = req.resource_metrics;
+        if let Some(ref fwd) = self.forwarder {
+            fwd.forward_metrics(resource_metrics.clone());
+        }
         self.store.write().await.insert_metrics(resource_metrics);
         Ok(Response::new(ExportMetricsServiceResponse {
             ..Default::default()
