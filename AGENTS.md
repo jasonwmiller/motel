@@ -34,7 +34,7 @@ cargo run -- skill-install --global  # Install skill globally
 
 - **`src/store.rs`** — Central in-memory store (`SharedStore = Arc<RwLock<Store>>`). All signal types use `VecDeque` with FIFO eviction. Traces are evicted by `trace_id` when `max_traces` is exceeded.
 - **`src/server/`** — Three listeners: `otlp_grpc.rs` (standard OTLP TraceService/LogsService/MetricsService), `otlp_http.rs` (Axum `/v1/traces`, `/v1/logs`, `/v1/metrics`), `query_grpc.rs` (custom QueryService with streaming follow support and SQL query execution).
-- **`src/client/`** — CLI query commands. Each submodule (trace, log, metrics, sql, clear) builds gRPC requests and formats output (Text/JSONL/CSV). `view.rs` connects to a running server's Follow streams and pipes data into a local Store to drive the TUI. `mod.rs` contains shared utilities.
+- **`src/client/`** — CLI query commands. Each submodule (trace, log, metrics, sql, clear) builds gRPC requests and formats output (Text/JSONL/CSV). `view.rs` queries all existing data on connect, then subscribes to Follow streams for new data, piping both into a local Store to drive the TUI. `mod.rs` contains shared utilities.
 - **`src/query/`** — SQL query engine built on DataFusion:
   - `datafusion_ctx.rs` — Creates a `SessionContext` with three registered tables (`traces`, `logs`, `metrics`). One context is created per server lifetime and reused across queries.
   - `table_provider.rs` — `OtelTable` implements DataFusion's `TableProvider`. On each `scan()`, it acquires a read lock on the store, converts data to Arrow `RecordBatch` via `arrow_convert`, then releases the lock before query execution.
@@ -42,7 +42,12 @@ cargo run -- skill-install --global  # Install skill globally
   - `arrow_schema.rs` — Arrow schema definitions for traces (13 columns), logs (9 columns), and metrics (9 columns).
   - `sql/mod.rs` — `execute()` runs SQL via DataFusion and converts Arrow RecordBatches to protobuf `Row` responses.
   - `sql/convert.rs` — Converts CLI flags (`--service`, `--attribute`, etc.) into SQL query strings.
-- **`src/tui/`** — ratatui-based interactive UI with tabs for traces/logs/metrics. Uses broadcast channel events for real-time updates with dirty tracking for efficient refresh.
+- **`src/tui/`** — ratatui-based interactive UI with three tabs (1:Logs, 2:Traces, 3:Metrics):
+  - `app.rs` — Data model: `App` state, `TraceGroup` (spans grouped by trace_id), `SpanTreeNode` (depth-first tree for waterfall), `AggregatedMetric` (grouped by name+service), `LogRow`. Includes `build_span_tree()`, `group_traces()`, `aggregate_metrics()`, follow mode, service color palette (One Dark-inspired RGB), metric graph mode toggle.
+  - `ui.rs` — Rendering: master-detail 60/40 side panels for Logs and Metrics tabs, trace list + timeline waterfall view with service-colored timing bars and `├─` tree indentation, metric bar chart graph (Unicode block chars `▁▂▃▄▅▆▇█`), `▶` selection marker. `draw()` takes `&mut App` for service color computation (pre-populated via `ensure_service_colors()`).
+  - `event.rs` — Key handling: `f` toggles follow mode, `g` toggles metric graph, `Enter` opens trace timeline, `Esc` goes back from timeline, PgUp/PgDn scrolls detail pane, tab numbers 1/2/3.
+  - `mod.rs` — Main event loop, terminal setup/teardown.
+  - Uses broadcast channel events for real-time updates with dirty tracking for efficient refresh.
 - **`src/install.rs`** — `skill-install` subcommand logic. Embeds `skills/motel/SKILL.md` via `include_str!`.
 - **`src/cli.rs`** — clap derive command definitions (Server, View, Traces, Logs, Metrics, Sql, Clear, Status, Shutdown, SkillInstall). Output formats: `Text`, `Table`, `Jsonl`, `Csv`.
 - **`proto/query.proto`** — Custom query/follow/clear/status/shutdown/SQL gRPC API. Standard OTLP protos are in `proto/opentelemetry-proto/` (git submodule).
