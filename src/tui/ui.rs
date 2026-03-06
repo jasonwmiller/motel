@@ -144,6 +144,15 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
         Span::styled("f", Style::default().fg(key_color)),
         Span::raw(":follow  "),
     ];
+    if matches!(app.current_tab, Tab::Logs) {
+        let idx = app.tab_states[Tab::Logs.index()].selected;
+        if let Some(log) = app.log_rows.get(idx) {
+            if !log.trace_id.is_empty() {
+                help.push(Span::styled("Enter", Style::default().fg(key_color)));
+                help.push(Span::raw(":trace  "));
+            }
+        }
+    }
     if matches!(app.current_tab, Tab::Metrics) {
         help.push(Span::styled("g", Style::default().fg(key_color)));
         help.push(Span::raw(":graph  "));
@@ -281,14 +290,42 @@ fn draw_log_detail(f: &mut Frame, app: &App, area: Rect) {
                 &format!("{} ({})", log.severity_text, log.severity_number),
             ),
             detail_line("Body", &log.body),
-            detail_line(
-                "Trace ID",
-                &if log.trace_id.is_empty() {
-                    "-".to_string()
-                } else {
-                    hex_encode(&log.trace_id)
-                },
-            ),
+        ];
+        if log.trace_id.is_empty() {
+            l.push(detail_line("Trace ID", "-"));
+        } else {
+            let trace_id_str = hex_encode(&log.trace_id);
+            let trace_exists = app
+                .trace_groups
+                .iter()
+                .any(|g| g.trace_id == log.trace_id);
+            if trace_exists {
+                l.push(Line::from(vec![
+                    Span::styled(
+                        "Trace ID: ".to_string(),
+                        Style::default().fg(Color::Rgb(86, 182, 194)),
+                    ),
+                    Span::styled(
+                        format!("{} [Enter to view]", trace_id_str),
+                        Style::default()
+                            .fg(Color::Rgb(97, 175, 239))
+                            .add_modifier(Modifier::UNDERLINED),
+                    ),
+                ]));
+            } else {
+                l.push(Line::from(vec![
+                    Span::styled(
+                        "Trace ID: ".to_string(),
+                        Style::default().fg(Color::Rgb(86, 182, 194)),
+                    ),
+                    Span::styled(
+                        format!("{} (trace not in store)", trace_id_str),
+                        Style::default().fg(Color::Rgb(100, 100, 100)),
+                    ),
+                ]));
+            }
+        }
+        l.extend([
             detail_line(
                 "Span ID",
                 &if log.span_id.is_empty() {
@@ -300,7 +337,7 @@ fn draw_log_detail(f: &mut Frame, app: &App, area: Rect) {
             detail_line("Scope", &log.scope_name),
             Line::from(""),
             section_header("Attributes"),
-        ];
+        ]);
         for kv in &log.attributes {
             l.push(detail_line(
                 &format!("  {}", kv.key),

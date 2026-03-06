@@ -48,6 +48,16 @@ impl Tab {
 }
 
 // ---------------------------------------------------------------------------
+// Input mode (normal navigation vs filter input)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputMode {
+    Normal,
+    Filter,
+}
+
+// ---------------------------------------------------------------------------
 // Trace view modes
 // ---------------------------------------------------------------------------
 
@@ -251,6 +261,16 @@ pub struct App {
 
     // Multi-server mode: true when viewing data from multiple servers
     pub multi_server: bool,
+
+    // Filter/search state
+    pub input_mode: InputMode,
+    pub filter_text: String,
+    pub filter_cursor: usize,
+
+    // Filtered data (indices into the main data vectors)
+    pub filtered_trace_indices: Vec<usize>,
+    pub filtered_log_indices: Vec<usize>,
+    pub filtered_metric_indices: Vec<usize>,
 }
 
 impl App {
@@ -277,6 +297,12 @@ impl App {
             metric_count: 0,
             service_colors: HashMap::new(),
             multi_server: false,
+            input_mode: InputMode::Normal,
+            filter_text: String::new(),
+            filter_cursor: 0,
+            filtered_trace_indices: Vec::new(),
+            filtered_log_indices: Vec::new(),
+            filtered_metric_indices: Vec::new(),
         }
     }
 
@@ -293,7 +319,7 @@ impl App {
     pub fn current_row_count(&self) -> usize {
         match self.current_tab {
             Tab::Traces => match &self.trace_view {
-                TraceView::List => self.trace_groups.len(),
+                TraceView::List => self.filtered_trace_indices.len(),
                 TraceView::Diff => self
                     .diff_result
                     .as_ref()
@@ -301,8 +327,8 @@ impl App {
                     .unwrap_or(0),
                 TraceView::Timeline(_) => self.timeline_nodes.len(),
             },
-            Tab::Logs => self.log_rows.len(),
-            Tab::Metrics => self.aggregated_metrics.len(),
+            Tab::Logs => self.filtered_log_indices.len(),
+            Tab::Metrics => self.filtered_metric_indices.len(),
         }
     }
 
@@ -435,13 +461,44 @@ impl App {
         if self.current_tab != Tab::Traces || self.trace_view != TraceView::List {
             return;
         }
-        let idx = self.tab_states[Tab::Traces.index()].selected;
-        if let Some(group) = self.trace_groups.get(idx) {
-            let trace_id = group.trace_id.clone();
+        let selected = self.tab_states[Tab::Traces.index()].selected;
+        if let Some(&real_idx) = self.filtered_trace_indices.get(selected) {
+            if let Some(group) = self.trace_groups.get(real_idx) {
+                let trace_id = group.trace_id.clone();
+                self.timeline_nodes = build_span_tree(&group.spans);
+                self.timeline_selected = 0;
+                self.detail_scroll = 0;
+                self.trace_view = TraceView::Timeline(trace_id);
+            }
+        }
+    }
+
+    /// Navigate to a specific trace by trace_id.
+    /// Switches to Traces tab, finds the trace group, and opens timeline view.
+    /// Returns true if the trace was found.
+    pub fn navigate_to_trace(&mut self, trace_id: &[u8]) -> bool {
+        if trace_id.is_empty() {
+            return false;
+        }
+
+        let group_idx = self
+            .trace_groups
+            .iter()
+            .position(|g| g.trace_id == trace_id);
+
+        if let Some(idx) = group_idx {
+            self.current_tab = Tab::Traces;
+            self.detail_scroll = 0;
+            self.tab_states[Tab::Traces.index()].selected = idx;
+
+            let group = &self.trace_groups[idx];
             self.timeline_nodes = build_span_tree(&group.spans);
             self.timeline_selected = 0;
-            self.detail_scroll = 0;
-            self.trace_view = TraceView::Timeline(trace_id);
+            self.trace_view = TraceView::Timeline(trace_id.to_vec());
+
+            true
+        } else {
+            false
         }
     }
 
@@ -456,9 +513,11 @@ impl App {
         if self.current_tab != Tab::Traces || self.trace_view != TraceView::List {
             return;
         }
-        let idx = self.tab_states[Tab::Traces.index()].selected;
-        if let Some(group) = self.trace_groups.get(idx) {
-            self.marked_trace_id = Some(group.trace_id.clone());
+        let selected = self.tab_states[Tab::Traces.index()].selected;
+        if let Some(&real_idx) = self.filtered_trace_indices.get(selected) {
+            if let Some(group) = self.trace_groups.get(real_idx) {
+                self.marked_trace_id = Some(group.trace_id.clone());
+            }
         }
     }
 
@@ -470,8 +529,12 @@ impl App {
         let Some(ref marked_id) = self.marked_trace_id else {
             return;
         };
-        let idx = self.tab_states[Tab::Traces.index()].selected;
-        let Some(current_group) = self.trace_groups.get(idx) else {
+        let selected = self.tab_states[Tab::Traces.index()].selected;
+        let real_idx = match self.filtered_trace_indices.get(selected) {
+            Some(&i) => i,
+            None => return,
+        };
+        let Some(current_group) = self.trace_groups.get(real_idx) else {
             return;
         };
         // Don't diff a trace with itself
@@ -503,6 +566,80 @@ impl App {
         }
     }
 
+    /// Apply the current filter text to all data, populating filtered_*_indices.
+    pub fn apply_filter(&mut self) {
+        let query = self.filter_text.to_lowercase();
+
+        if query.is_empty() {
+            self.filtered_trace_indices = (0..self.trace_groups.len()).collect();
+            self.filtered_log_indices = (0..self.log_rows.len()).collect();
+            self.filtered_metric_indices = (0..self.aggregated_metrics.len()).collect();
+        } else {
+            self.filtered_trace_indices = self
+                .trace_groups
+                .iter()
+                .enumerate()
+                .filter(|(_, g)| {
+                    g.service_name.to_lowercase().contains(&query)
+                        || g.root_span_name.to_lowercase().contains(&query)
+                        || hex::encode(&g.trace_id).contains(&query)
+                })
+                .map(|(i, _)| i)
+                .collect();
+
+            self.filtered_log_indices = self
+                .log_rows
+                .iter()
+                .enumerate()
+                .filter(|(_, l)| {
+                    l.body.to_lowercase().contains(&query)
+                        || l.service_name.to_lowercase().contains(&query)
+                        || l.severity_text.to_lowercase().contains(&query)
+                })
+                .map(|(i, _)| i)
+                .collect();
+
+            self.filtered_metric_indices = self
+                .aggregated_metrics
+                .iter()
+                .enumerate()
+                .filter(|(_, m)| {
+                    m.metric_name.to_lowercase().contains(&query)
+                        || m.service_name.to_lowercase().contains(&query)
+                })
+                .map(|(i, _)| i)
+                .collect();
+        }
+
+        // Clamp selections to filtered bounds
+        self.clamp_selection(Tab::Traces);
+        self.clamp_selection(Tab::Logs);
+        self.clamp_selection(Tab::Metrics);
+    }
+
+    /// Clamp the tab selection to the filtered row count.
+    fn clamp_selection(&mut self, tab: Tab) {
+        let count = match tab {
+            Tab::Traces => self.filtered_trace_indices.len(),
+            Tab::Logs => self.filtered_log_indices.len(),
+            Tab::Metrics => self.filtered_metric_indices.len(),
+        };
+        let ts = &mut self.tab_states[tab.index()];
+        if count > 0 {
+            ts.selected = ts.selected.min(count - 1);
+        } else {
+            ts.selected = 0;
+        }
+    }
+
+    /// Clear the filter and show all data.
+    pub fn clear_filter(&mut self) {
+        self.filter_text.clear();
+        self.filter_cursor = 0;
+        self.input_mode = InputMode::Normal;
+        self.apply_filter();
+    }
+
     pub async fn refresh_from_store(&mut self, store: &SharedStore) {
         let guard = store.read().await;
 
@@ -512,15 +649,6 @@ impl App {
             self.trace_count = guard.trace_count();
             self.span_count = guard.span_count();
             self.tab_states[Tab::Traces.index()].dirty = false;
-
-            if self.follow_mode && !self.trace_groups.is_empty() {
-                self.tab_states[Tab::Traces.index()].selected = self.trace_groups.len() - 1;
-            } else if !self.trace_groups.is_empty() {
-                let ts = &mut self.tab_states[Tab::Traces.index()];
-                ts.selected = ts.selected.min(self.trace_groups.len() - 1);
-            } else {
-                self.tab_states[Tab::Traces.index()].selected = 0;
-            }
 
             // Refresh timeline if viewing one
             if let TraceView::Timeline(ref tid) = self.trace_view
@@ -537,27 +665,26 @@ impl App {
             self.log_rows = flatten_logs(&guard.logs);
             self.log_count = guard.log_count();
             self.tab_states[Tab::Logs.index()].dirty = false;
-
-            if self.follow_mode && !self.log_rows.is_empty() {
-                self.tab_states[Tab::Logs.index()].selected = self.log_rows.len() - 1;
-            } else if !self.log_rows.is_empty() {
-                let ts = &mut self.tab_states[Tab::Logs.index()];
-                ts.selected = ts.selected.min(self.log_rows.len() - 1);
-            } else {
-                self.tab_states[Tab::Logs.index()].selected = 0;
-            }
         }
 
         if self.tab_states[Tab::Metrics.index()].dirty {
             self.aggregated_metrics = aggregate_metrics(&guard.metrics);
             self.metric_count = guard.metric_count();
             self.tab_states[Tab::Metrics.index()].dirty = false;
+        }
 
-            if !self.aggregated_metrics.is_empty() {
-                let ts = &mut self.tab_states[Tab::Metrics.index()];
-                ts.selected = ts.selected.min(self.aggregated_metrics.len() - 1);
-            } else {
-                self.tab_states[Tab::Metrics.index()].selected = 0;
+        // Re-apply filter after data refresh
+        self.apply_filter();
+
+        // Follow mode: jump to last filtered row
+        if self.follow_mode {
+            if !self.filtered_trace_indices.is_empty() {
+                self.tab_states[Tab::Traces.index()].selected =
+                    self.filtered_trace_indices.len() - 1;
+            }
+            if !self.filtered_log_indices.is_empty() {
+                self.tab_states[Tab::Logs.index()].selected =
+                    self.filtered_log_indices.len() - 1;
             }
         }
     }
@@ -922,5 +1049,66 @@ fn format_number_value(v: &Option<crate::otel::metrics::v1::number_data_point::V
         Some(Value::AsDouble(d)) => format!("{d:.6}"),
         Some(Value::AsInt(i)) => i.to_string(),
         None => "".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_test_app_with_traces() -> App {
+        let mut app = App::new();
+        app.trace_groups = vec![TraceGroup {
+            trace_id: vec![1u8; 16],
+            service_name: "test-svc".to_string(),
+            root_span_name: "root".to_string(),
+            span_count: 1,
+            duration_ns: 1_000_000,
+            start_time_nano: 1_000_000_000,
+            spans: vec![SpanRow {
+                time_nano: 1_000_000_000,
+                service_name: "test-svc".to_string(),
+                span_name: "root".to_string(),
+                duration_ns: 1_000_000,
+                trace_id: vec![1u8; 16],
+                span_id: vec![1, 2, 3, 4, 5, 6, 7, 8],
+                parent_span_id: vec![],
+                kind: 1,
+                status_code: 0,
+                status_message: String::new(),
+                attributes: vec![],
+                resource_attributes: vec![],
+                events_count: 0,
+                links_count: 0,
+            }],
+        }];
+        app
+    }
+
+    #[test]
+    fn test_navigate_to_trace_found() {
+        let mut app = make_test_app_with_traces();
+        app.current_tab = Tab::Logs;
+        assert!(app.navigate_to_trace(&vec![1u8; 16]));
+        assert_eq!(app.current_tab, Tab::Traces);
+        assert!(matches!(app.trace_view, TraceView::Timeline(_)));
+        assert_eq!(app.tab_states[Tab::Traces.index()].selected, 0);
+        assert_eq!(app.timeline_nodes.len(), 1);
+    }
+
+    #[test]
+    fn test_navigate_to_trace_not_found() {
+        let mut app = make_test_app_with_traces();
+        app.current_tab = Tab::Logs;
+        assert!(!app.navigate_to_trace(&vec![99u8; 16]));
+        assert_eq!(app.current_tab, Tab::Logs);
+    }
+
+    #[test]
+    fn test_navigate_to_trace_empty_id() {
+        let mut app = make_test_app_with_traces();
+        app.current_tab = Tab::Logs;
+        assert!(!app.navigate_to_trace(&[]));
+        assert_eq!(app.current_tab, Tab::Logs);
     }
 }
