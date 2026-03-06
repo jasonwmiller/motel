@@ -1,5 +1,6 @@
 pub mod cli;
 pub mod client;
+pub mod config;
 pub mod install;
 pub mod mcp;
 pub mod persist;
@@ -68,29 +69,75 @@ pub use motel::query as query_proto;
 pub use opentelemetry::proto as otel;
 
 use clap::Parser;
-use cli::{Cli, Command};
+use cli::{Cli, Command, ConfigAction};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    let config = config::load()?;
 
     match cli.command {
-        Command::Server(args) => server::run(args).await,
-        Command::View(args) => client::view::run(args).await,
-        Command::Traces(args) => client::trace::run(args).await,
-        Command::Logs(args) => client::log::run(args).await,
-        Command::Metrics(args) => client::metrics::run(args).await,
-        Command::Sql(args) => client::sql::run(args).await,
+        Command::Server(args) => {
+            let resolved = args.resolve(&config.server);
+            server::run(resolved).await
+        }
+        Command::View(args) => {
+            let resolved = args.resolve(&config);
+            client::view::run(resolved).await
+        }
+        Command::Traces(args) => {
+            let resolved = args.resolve(&config);
+            client::trace::run(resolved).await
+        }
+        Command::Logs(args) => {
+            let resolved = args.resolve(&config);
+            client::log::run(resolved).await
+        }
+        Command::Metrics(args) => {
+            let resolved = args.resolve(&config);
+            client::metrics::run(resolved).await
+        }
+        Command::Sql(args) => {
+            let resolved = args.resolve(&config);
+            client::sql::run(resolved).await
+        }
         Command::ServiceMap(args) => client::service_map::run(args).await,
         Command::Export(args) => client::export::run(args).await,
         Command::Latency(args) => client::latency::run(args).await,
-        Command::Clear(args) => client::clear::run(args).await,
-        Command::Status(args) => client::status::run(args).await,
-        Command::Shutdown(args) => client::shutdown::run(args).await,
+        Command::Clear(args) => {
+            let resolved = args.resolve(&config);
+            client::clear::run(resolved).await
+        }
+        Command::Status(args) => {
+            let resolved = args.resolve(&config);
+            client::status::run(resolved).await
+        }
+        Command::Shutdown(args) => {
+            let resolved = args.resolve(&config);
+            client::shutdown::run(resolved).await
+        }
         Command::Replay(args) => client::replay::run(args).await,
         Command::Import(args) => client::import::run(args).await,
         Command::SkillInstall(args) => install::run(args),
         Command::Init(args) => client::init::run(args),
         Command::Mcp(args) => mcp::run(args).await,
+        Command::Config(cmd) => match cmd.action {
+            ConfigAction::Init => {
+                let path = config::init()?;
+                println!("Created config file at {}", path.display());
+                Ok(())
+            }
+            ConfigAction::Path => {
+                match config::config_path() {
+                    Some(path) => println!("{}", path.display()),
+                    None => anyhow::bail!("cannot determine config directory"),
+                }
+                Ok(())
+            }
+            ConfigAction::Show => {
+                println!("{}", toml::to_string_pretty(&config)?);
+                Ok(())
+            }
+        },
     }
 }

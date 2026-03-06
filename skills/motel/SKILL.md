@@ -207,6 +207,9 @@ motel init --lang rust        # Rust OTLP setup snippet
 motel init --lang go          # Go OTLP setup snippet
 motel init --lang java        # Java agent setup snippet
 motel init --endpoint http://collector:4317 --service-name myapp
+motel config init             # Generate default config file (~/.config/motel/config.toml)
+motel config path             # Print config file path
+motel config show             # Print resolved config
 ```
 
 ## Time Filters

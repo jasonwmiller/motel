@@ -1,10 +1,10 @@
 use anyhow::Result;
 
-use crate::cli::ShutdownArgs;
+use crate::cli::ResolvedShutdownArgs;
 use crate::query_proto::ShutdownRequest;
 use crate::query_proto::query_service_client::QueryServiceClient;
 
-pub async fn run(args: ShutdownArgs) -> Result<()> {
+pub async fn run(args: ResolvedShutdownArgs) -> Result<()> {
     let mut client = QueryServiceClient::connect(args.addr.clone()).await?;
 
     let response = client

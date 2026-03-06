@@ -12,7 +12,7 @@ use tonic::transport::Server;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
 
-use crate::cli::{PersistFormat, ServerArgs};
+use crate::cli::{PersistFormat, ResolvedServerArgs};
 use crate::otel::collector::{
     logs::v1::logs_service_server::LogsServiceServer,
     metrics::v1::metrics_service_server::MetricsServiceServer,
@@ -24,7 +24,7 @@ use crate::store::Store;
 
 use self::query_grpc::QueryServiceImpl;
 
-pub async fn run(args: ServerArgs) -> anyhow::Result<()> {
+pub async fn run(args: ResolvedServerArgs) -> anyhow::Result<()> {
     // Set up tracing subscriber
     init_tracing(&args)?;
 
@@ -249,7 +249,7 @@ pub async fn run(args: ServerArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn init_tracing(args: &ServerArgs) -> anyhow::Result<()> {
+fn init_tracing(args: &ResolvedServerArgs) -> anyhow::Result<()> {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     if let Some(ref endpoint) = args.otlp_endpoint {

@@ -379,6 +379,42 @@ motel export traces -o proto > traces.binpb   # binary protobuf (length-delimite
 ```
 
 Supported formats: `text`, `jsonl`, `csv`, `proto`. Default is `jsonl`.
+## Configuration
+
+motel supports a TOML config file for default settings so you don't need to pass flags every time. CLI flags always override config values.
+
+```bash
+# Generate default config file
+motel config init
+
+# Print config file path
+motel config path
+
+# Show resolved config
+motel config show
+```
+
+Config file location: `$XDG_CONFIG_HOME/motel/config.toml` (defaults to `~/.config/motel/config.toml`).
+
+Precedence: **CLI flag > config file > hardcoded default**.
+
+Example config:
+
+```toml
+[server]
+grpc_addr = "0.0.0.0:4317"
+http_addr = "0.0.0.0:4318"
+query_addr = "0.0.0.0:4319"
+max_traces = 10000
+max_logs = 100000
+max_metrics = 100000
+
+[defaults]
+output_format = "table"
+addr = "http://localhost:4319"
+```
+
+The `[server]` section configures server startup defaults. The `[defaults]` section sets the default output format and query service address for all client commands.
 
 ## HTTP/JSON Query API
 

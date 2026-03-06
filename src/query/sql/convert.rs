@@ -170,9 +170,9 @@ mod tests {
             until: None,
             limit: Some(10),
             attribute: vec![],
-            output: crate::cli::OutputFormat::Text,
+            output: Some(crate::cli::OutputFormat::Text),
             show_trace_id: false,
-            addr: "http://localhost:4319".into(),
+            addr: Some("http://localhost:4319".to_string()),
         };
         let sql = traces_args_to_sql(&args).unwrap();
         assert!(sql.contains("service_name = 'my-service'"));
@@ -191,9 +191,9 @@ mod tests {
             until: None,
             limit: None,
             attribute: vec![],
-            output: crate::cli::OutputFormat::Text,
+            output: Some(crate::cli::OutputFormat::Text),
             show_trace_id: false,
-            addr: "http://localhost:4319".into(),
+            addr: Some("http://localhost:4319".to_string()),
         };
         let sql = traces_args_to_sql(&args).unwrap();
         assert_eq!(
@@ -213,9 +213,9 @@ mod tests {
             until: None,
             limit: None,
             attribute: vec![],
-            output: crate::cli::OutputFormat::Text,
+            output: Some(crate::cli::OutputFormat::Text),
             show_trace_id: false,
-            addr: "http://localhost:4319".into(),
+            addr: Some("http://localhost:4319".to_string()),
         };
         let sql = logs_args_to_sql(&args).unwrap();
         assert!(sql.contains("severity_text LIKE '%ERROR%'"));
@@ -230,9 +230,9 @@ mod tests {
             since: None,
             until: None,
             limit: Some(5),
-            output: crate::cli::OutputFormat::Text,
+            output: Some(crate::cli::OutputFormat::Text),
             show_trace_id: false,
-            addr: "http://localhost:4319".into(),
+            addr: Some("http://localhost:4319".to_string()),
         };
         let sql = metrics_args_to_sql(&args).unwrap();
         assert!(sql.contains("metric_name = 'cpu.usage'"));
@@ -250,9 +250,9 @@ mod tests {
             until: None,
             limit: None,
             attribute: vec!["http.method=GET".into()],
-            output: crate::cli::OutputFormat::Text,
+            output: Some(crate::cli::OutputFormat::Text),
             show_trace_id: false,
-            addr: "http://localhost:4319".into(),
+            addr: Some("http://localhost:4319".to_string()),
         };
         let sql = traces_args_to_sql(&args).unwrap();
         assert!(sql.contains(r#"attributes LIKE '%"http.method":"GET"%'"#));

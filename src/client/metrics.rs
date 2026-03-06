@@ -1,11 +1,11 @@
 use anyhow::Result;
 
-use crate::cli::{MetricsArgs, OutputFormat};
+use crate::cli::{OutputFormat, ResolvedMetricsArgs};
 use crate::client::{extract_request_trace_id, print_table};
 use crate::query_proto::query_service_client::QueryServiceClient;
 use crate::query_proto::{FollowRequest, QueryMetricsRequest};
 
-pub async fn run(args: MetricsArgs) -> Result<()> {
+pub async fn run(args: ResolvedMetricsArgs) -> Result<()> {
     if args.follow {
         return run_follow(args).await;
     }
@@ -143,7 +143,7 @@ fn describe_metric_data(data: &Option<crate::otel::metrics::v1::metric::Data>) -
     }
 }
 
-async fn run_follow(args: MetricsArgs) -> Result<()> {
+async fn run_follow(args: ResolvedMetricsArgs) -> Result<()> {
     let mut client = QueryServiceClient::connect(args.addr.clone()).await?;
 
     let mut stream = client
