@@ -504,7 +504,7 @@ impl App {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn extract_service_name(attrs: &[KeyValue]) -> String {
+pub fn extract_service_name(attrs: &[KeyValue]) -> String {
     for kv in attrs {
         if kv.key == "service.name" {
             return format_any_value(kv.value.as_ref());
@@ -559,7 +559,7 @@ fn severity_text(num: i32, text: &str) -> String {
 // Flatten + group traces
 // ---------------------------------------------------------------------------
 
-fn flatten_traces(traces: &VecDeque<ResourceSpans>) -> Vec<SpanRow> {
+pub fn flatten_traces(traces: &VecDeque<ResourceSpans>) -> Vec<SpanRow> {
     let mut rows = Vec::new();
     for rs in traces {
         let resource_attrs = rs
@@ -598,7 +598,7 @@ fn flatten_traces(traces: &VecDeque<ResourceSpans>) -> Vec<SpanRow> {
     rows
 }
 
-fn group_traces(spans: Vec<SpanRow>) -> Vec<TraceGroup> {
+pub fn group_traces(spans: Vec<SpanRow>) -> Vec<TraceGroup> {
     let mut groups: HashMap<Vec<u8>, Vec<SpanRow>> = HashMap::new();
     for span in spans {
         groups.entry(span.trace_id.clone()).or_default().push(span);
@@ -705,7 +705,7 @@ pub fn build_span_tree(spans: &[SpanRow]) -> Vec<SpanTreeNode> {
 // Flatten logs
 // ---------------------------------------------------------------------------
 
-fn flatten_logs(logs: &VecDeque<ResourceLogs>) -> Vec<LogRow> {
+pub fn flatten_logs(logs: &VecDeque<ResourceLogs>) -> Vec<LogRow> {
     let mut rows = Vec::new();
     for rl in logs {
         let resource_attrs = rl
@@ -750,7 +750,7 @@ fn flatten_logs(logs: &VecDeque<ResourceLogs>) -> Vec<LogRow> {
 // Aggregate metrics
 // ---------------------------------------------------------------------------
 
-fn aggregate_metrics(metrics: &VecDeque<ResourceMetrics>) -> Vec<AggregatedMetric> {
+pub fn aggregate_metrics(metrics: &VecDeque<ResourceMetrics>) -> Vec<AggregatedMetric> {
     // Key: (metric_name, service_name)
     let mut map: HashMap<(String, String), AggregatedMetric> = HashMap::new();
 

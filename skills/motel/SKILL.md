@@ -26,12 +26,17 @@ motel server --persist ./data/ --persist-format parquet
 
 # Custom addresses
 motel server --grpc-addr 0.0.0.0:4317 --http-addr 0.0.0.0:4318 --query-addr 0.0.0.0:4319
+
+# Start with web UI dashboard
+motel server --web
+motel server --web --web-addr 0.0.0.0:8080
 ```
 
 Default ports:
 - **4317** - gRPC OTLP ingestion
 - **4318** - HTTP OTLP ingestion
 - **4319** - Query service (gRPC)
+- **4320** - Web UI (when `--web` is enabled)
 
 ## Configuring Your App to Send Telemetry
 

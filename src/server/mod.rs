@@ -2,6 +2,7 @@ pub mod otlp_grpc;
 pub mod otlp_http;
 pub mod query_grpc;
 pub mod query_http;
+pub mod web;
 
 use anyhow::Context;
 use opentelemetry::trace::TracerProvider as _;
@@ -168,11 +169,40 @@ pub async fn run(args: ServerArgs) -> anyhow::Result<()> {
         None
     };
 
+    // Start web UI if enabled
+    let web_handle = if args.web {
+        let web_addr: std::net::SocketAddr = args.web_addr.parse().context("invalid web address")?;
+        let web_session_ctx =
+            crate::query::datafusion_ctx::create_context(store.clone()).await?;
+        let web_state = web::WebState {
+            store: store.clone(),
+            event_tx: event_tx.clone(),
+            session_ctx: std::sync::Arc::new(web_session_ctx),
+        };
+        let web_router = web::router(web_state);
+        Some(tokio::spawn(async move {
+            tracing::info!("Web UI listening on http://{}", web_addr);
+            let listener = tokio::net::TcpListener::bind(web_addr)
+                .await
+                .context("failed to bind web UI address")?;
+            axum::serve(listener, web_router)
+                .await
+                .context("Web UI server failed")
+        }))
+    } else {
+        None
+    };
+
     tracing::info!(
-        "motel server started: gRPC={}, HTTP={}, Query={}",
+        "motel server started: gRPC={}, HTTP={}, Query={}{}",
         args.grpc_addr,
         args.http_addr,
         args.query_addr,
+        if args.web {
+            format!(", Web={}", args.web_addr)
+        } else {
+            String::new()
+        },
     );
 
     // Wait for shutdown signal (Ctrl+C, remote shutdown, or TUI exit)
@@ -202,6 +232,16 @@ pub async fn run(args: ServerArgs) -> anyhow::Result<()> {
         } => {
             result??;
             tracing::info!("TUI exited, shutting down");
+        }
+        result = async {
+            if let Some(handle) = web_handle {
+                handle.await
+            } else {
+                std::future::pending().await
+            }
+        } => {
+            result??;
+            tracing::info!("Web UI exited");
         }
     }
 

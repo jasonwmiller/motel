@@ -279,7 +279,7 @@ impl Store {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::otel::common::v1::KeyValue;
     use crate::otel::resource::v1::Resource;

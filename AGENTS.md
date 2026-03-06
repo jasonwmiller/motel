@@ -19,6 +19,8 @@ cargo run -- server                  # Start OTLP server with TUI (gRPC:4317, HT
 cargo run -- server --no-tui         # Start headless server
 cargo run -- server --persist /tmp/motel.db  # Start with SQLite persistence
 cargo run -- server --persist ./data/ --persist-format parquet  # Parquet persistence
+cargo run -- server --web            # Start with web UI dashboard on port 4320
+cargo run -- server --web --web-addr 0.0.0.0:8080  # Custom web UI address
 cargo run -- view                    # Attach TUI to a running server (default: localhost:4319)
 cargo run -- view --addr http://h1:4319 --addr http://h2:4319  # Multi-server aggregated view
 cargo run -- traces                  # Query traces
@@ -55,7 +57,9 @@ cargo run -- mcp --addr http://localhost:4319  # MCP server with custom query ad
   - `mod.rs` — `PersistBackend` trait and `SharedPersistBackend` type alias.
   - `sqlite.rs` — SQLite backend: stores each `Resource*` item as a protobuf-encoded BLOB. Uses WAL mode and `synchronous=NORMAL` for performance.
   - `parquet.rs` — Parquet backend: stores protobuf-encoded BLOBs in Parquet files (one per signal type). Buffers writes in memory and flushes to disk on each insert.
-- **`src/server/`** — Three listeners: `otlp_grpc.rs` (standard OTLP TraceService/LogsService/MetricsService), `otlp_http.rs` (Axum `/v1/traces`, `/v1/logs`, `/v1/metrics`), `query_grpc.rs` (custom QueryService with streaming follow support and SQL query execution), `query_http.rs` (REST/JSON query API on the same HTTP port: `/api/traces`, `/api/logs`, `/api/metrics`, `/api/sql`, `/api/status`, `/api/clear/*`).
+- **`src/server/`** — Multiple listeners: `otlp_grpc.rs` (standard OTLP TraceService/LogsService/MetricsService), `otlp_http.rs` (Axum `/v1/traces`, `/v1/logs`, `/v1/metrics`), `query_grpc.rs` (custom QueryService with streaming follow support and SQL query execution), `query_http.rs` (REST/JSON query API on the same HTTP port: `/api/traces`, `/api/logs`, `/api/metrics`, `/api/sql`, `/api/status`, `/api/clear/*`), `web.rs` (embedded web UI dashboard with REST API and SSE).
+- **`src/server/web.rs`** — Axum router serving an embedded SPA web dashboard. Provides REST API endpoints (`/api/status`, `/api/traces`, `/api/logs`, `/api/metrics`, `/api/sql?q=...`) and SSE real-time event stream (`/api/events`). Static assets (HTML/JS/CSS) are embedded via `include_str!` from `web_assets/`.
+- **`src/server/web_assets/`** — Frontend SPA files (`index.html`, `app.js`, `style.css`) embedded into the binary at compile time. Vanilla JS, no build step or external dependencies.
 - **`src/client/`** — CLI query commands. Each submodule (trace, log, metrics, sql, latency, clear) builds gRPC requests and formats output (Text/JSONL/CSV). `view.rs` supports connecting to multiple servers simultaneously (`--addr` can be specified multiple times), queries all existing data on connect, then subscribes to Follow streams for new data, piping both into a local Store to drive the TUI. Each item is tagged with a `motel.source` resource attribute identifying its origin server. `import.rs` reads files (JSONL or OTLP protobuf) and sends data to a server via standard OTLP gRPC clients. `mod.rs` contains shared utilities.
 - **`src/query/`** — SQL query engine built on DataFusion:
   - `datafusion_ctx.rs` — Creates a `SessionContext` with three registered tables (`traces`, `logs`, `metrics`). One context is created per server lifetime and reused across queries.
