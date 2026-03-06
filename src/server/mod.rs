@@ -1,6 +1,7 @@
 pub mod forwarder;
 pub mod otlp_grpc;
 pub mod otlp_http;
+pub mod prometheus;
 pub mod query_grpc;
 pub mod query_http;
 pub mod web;
@@ -222,13 +223,39 @@ pub async fn run(args: ResolvedServerArgs) -> anyhow::Result<()> {
         None
     };
 
+    // Start Prometheus scrape endpoint if enabled
+    let prom_handle = if args.prometheus || args.prom_addr != "0.0.0.0:9090" {
+        let prom_addr: std::net::SocketAddr = args
+            .prom_addr
+            .parse()
+            .context("invalid Prometheus address")?;
+        let prom_store = store.clone();
+        Some(tokio::spawn(async move {
+            tracing::info!("Prometheus endpoint listening on {}", prom_addr);
+            let router = prometheus::router(prom_store);
+            let listener = tokio::net::TcpListener::bind(prom_addr)
+                .await
+                .context("failed to bind Prometheus address")?;
+            axum::serve(listener, router)
+                .await
+                .context("Prometheus server failed")
+        }))
+    } else {
+        None
+    };
+
     tracing::info!(
-        "motel server started: gRPC={}, HTTP={}, Query={}{}",
+        "motel server started: gRPC={}, HTTP={}, Query={}{}{}",
         args.grpc_addr,
         args.http_addr,
         args.query_addr,
         if args.web {
             format!(", Web={}", args.web_addr)
+        } else {
+            String::new()
+        },
+        if args.prometheus || args.prom_addr != "0.0.0.0:9090" {
+            format!(", Prometheus={}", args.prom_addr)
         } else {
             String::new()
         },
@@ -281,6 +308,16 @@ pub async fn run(args: ResolvedServerArgs) -> anyhow::Result<()> {
         } => {
             result??;
             tracing::warn!("Sink task exited unexpectedly");
+        }
+        result = async {
+            if let Some(handle) = prom_handle {
+                handle.await
+            } else {
+                std::future::pending().await
+            }
+        } => {
+            result??;
+            tracing::info!("Prometheus endpoint exited");
         }
     }
 

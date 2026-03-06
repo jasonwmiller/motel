@@ -120,6 +120,12 @@ pub struct ServerArgs {
     /// Maximum sink file age before rotation (e.g., 1h, 30m, 24h)
     #[arg(long, default_value = "1h")]
     pub sink_rotate_interval: String,
+    /// Enable Prometheus scrape endpoint
+    #[arg(long)]
+    pub prometheus: bool,
+    /// Prometheus scrape endpoint listen address (implies --prometheus)
+    #[arg(long, default_value = "0.0.0.0:9090")]
+    pub prom_addr: String,
 }
 
 /// Resolved server args with all defaults applied (config file + hardcoded).
@@ -146,6 +152,8 @@ pub struct ResolvedServerArgs {
     pub sink_format: SinkFormat,
     pub sink_max_size: u64,
     pub sink_rotate_interval: String,
+    pub prometheus: bool,
+    pub prom_addr: String,
 }
 
 /// Validate sample_rate is in [0.0, 1.0]
@@ -192,6 +200,8 @@ impl ServerArgs {
             sink_format: self.sink_format,
             sink_max_size: self.sink_max_size,
             sink_rotate_interval: self.sink_rotate_interval,
+            prometheus: self.prometheus,
+            prom_addr: self.prom_addr,
         }
     }
 }
@@ -849,6 +859,8 @@ mod tests {
             sink_format: SinkFormat::Jsonl,
             sink_max_size: 104857600,
             sink_rotate_interval: "1h".to_string(),
+            prometheus: false,
+            prom_addr: "0.0.0.0:9090".to_string(),
         };
         let config = config::ServerConfig {
             grpc_addr: Some("9.9.9.9:1111".to_string()),
@@ -895,6 +907,8 @@ mod tests {
             sink_format: SinkFormat::Jsonl,
             sink_max_size: 104857600,
             sink_rotate_interval: "1h".to_string(),
+            prometheus: false,
+            prom_addr: "0.0.0.0:9090".to_string(),
         };
         let config = config::ServerConfig::default();
         let resolved = args.resolve(&config);
