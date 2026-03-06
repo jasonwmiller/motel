@@ -223,6 +223,41 @@ motel sql "SELECT span_name, AVG(duration_ns)/1e6 as avg_ms
            GROUP BY span_name ORDER BY avg_ms DESC"
 ```
 
+## Service Map
+
+Visualize service dependencies extracted from trace parent-child relationships:
+
+```bash
+# ASCII output (default)
+motel service-map
+
+# Mermaid diagram format
+motel service-map --format mermaid
+
+# Filter to recent traces
+motel service-map --since 5m
+```
+
+Example ASCII output:
+```
+Service Dependency Map
+======================
+
+  frontend --(120 calls, avg 45.2ms)--> api-gateway
+  api-gateway --(85 calls, avg 12.3ms)--> user-service
+  api-gateway --(42 calls, avg 8.7ms)--> payment-service
+  payment-service --(42 calls, avg 3.1ms)--> database
+
+Services: api-gateway, database, frontend, payment-service, user-service
+```
+
+Example Mermaid output:
+```
+graph LR
+    frontend["frontend"] -->|120 calls, 45.2ms avg| api_gateway["api-gateway"]
+    api_gateway["api-gateway"] -->|85 calls, 12.3ms avg| user_service["user-service"]
+```
+
 ## Other Commands
 
 ```bash
