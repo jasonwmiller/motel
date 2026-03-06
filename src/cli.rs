@@ -44,6 +44,8 @@ pub enum Command {
     SkillInstall(SkillInstallArgs),
     /// Generate OTLP configuration for your project
     Init(InitArgs),
+    /// Start MCP server (stdio transport) for AI tool integration
+    Mcp(McpArgs),
 }
 
 #[derive(clap::Args, Clone)]
@@ -321,6 +323,13 @@ pub enum InitLang {
 }
 
 #[derive(clap::Args, Clone)]
+pub struct McpArgs {
+    /// Query service address to connect to
+    #[arg(long, default_value = "http://localhost:4319")]
+    pub addr: String,
+}
+
+#[derive(clap::Args, Clone)]
 pub struct ReplayArgs {
     /// Target OTLP gRPC endpoint to send data to
     #[arg(long)]
@@ -427,6 +436,7 @@ pub enum PersistFormat {
     Sqlite,
     Parquet,
 }
+
 
 #[derive(Clone, ValueEnum)]
 pub enum OutputFormat {

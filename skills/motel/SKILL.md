@@ -184,6 +184,43 @@ The `--since` and `--until` flags accept:
 - Relative: `30s`, `5m`, `1h`, `2d` (seconds, minutes, hours, days ago)
 - Absolute: RFC3339 format like `2024-01-15T10:30:00Z`
 
+## MCP Server Mode
+
+motel can run as an MCP (Model Context Protocol) server, exposing its query capabilities as tools for AI assistants like Claude Code.
+
+```bash
+# Start MCP server (stdio transport)
+motel mcp
+
+# With custom query service address
+motel mcp --addr http://localhost:4319
+```
+
+### Available MCP Tools
+
+| Tool | Description |
+|---|---|
+| `query_traces` | Query traces with optional filters (service, span_name, trace_id, limit) |
+| `query_logs` | Query logs with optional filters (service, severity, body, limit) |
+| `query_metrics` | Query metrics with optional filters (service, name, limit) |
+| `run_sql` | Execute SQL against traces/logs/metrics tables |
+| `get_status` | Get server status (trace/log/metric counts) |
+
+### Configure in Claude Code
+
+Add to `.mcp.json` in your project:
+
+```json
+{
+  "mcpServers": {
+    "motel": {
+      "command": "motel",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
 ## Self-Instrumentation
 
 motel can report its own traces to itself or another instance:
