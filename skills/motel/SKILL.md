@@ -122,6 +122,14 @@ motel status                  # Show trace/log/metric counts
 motel clear                   # Clear all stored data
 motel clear traces            # Clear only traces
 motel shutdown                # Remotely shutdown a running server
+motel init                    # Generate .env with OTEL env vars (stdout)
+motel init -o .env            # Write .env file to disk
+motel init --lang node        # Node.js OTLP setup snippet
+motel init --lang python      # Python OTLP setup snippet
+motel init --lang rust        # Rust OTLP setup snippet
+motel init --lang go          # Go OTLP setup snippet
+motel init --lang java        # Java agent setup snippet
+motel init --endpoint http://collector:4317 --service-name myapp
 ```
 
 ## Time Filters
