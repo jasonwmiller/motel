@@ -1,10 +1,10 @@
 use anyhow::Result;
 
-use crate::cli::{ClearArgs, ClearTarget};
+use crate::cli::{ClearTarget, ResolvedClearArgs};
 use crate::query_proto::ClearRequest;
 use crate::query_proto::query_service_client::QueryServiceClient;
 
-pub async fn run(args: ClearArgs) -> Result<()> {
+pub async fn run(args: ResolvedClearArgs) -> Result<()> {
     let mut client = QueryServiceClient::connect(args.addr.clone()).await?;
 
     let request = ClearRequest {

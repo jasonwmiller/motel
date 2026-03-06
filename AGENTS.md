@@ -44,6 +44,9 @@ cargo run -- skill-install           # Install Claude Code skill for current pro
 cargo run -- skill-install --global  # Install skill globally
 cargo run -- mcp                     # Start MCP server (stdio) for AI tool integration
 cargo run -- mcp --addr http://localhost:4319  # MCP server with custom query address
+cargo run -- config init             # Generate default config file (~/.config/motel/config.toml)
+cargo run -- config path             # Print config file path
+cargo run -- config show             # Print resolved config as TOML
 ```
 
 ## Architecture
@@ -74,7 +77,8 @@ cargo run -- mcp --addr http://localhost:4319  # MCP server with custom query ad
 - **`src/install.rs`** — `skill-install` subcommand logic. Embeds `skills/motel/SKILL.md` via `include_str!`.
 - **`src/client/init.rs`** — `init` subcommand: generates OTLP config files (.env or language-specific snippets for Node, Python, Rust, Go, Java). Local-only, no server connection.
 - **`src/client/service_map.rs`** — `service-map` subcommand: generates service dependency graph from trace data via SQL self-join.
-- **`src/cli.rs`** — clap derive command definitions (Server, View, Traces, Logs, Metrics, Sql, ServiceMap, Export, Latency, Clear, Status, Shutdown, Replay, Import, SkillInstall, Init, Mcp). Output formats: `Text`, `Table`, `Jsonl`, `Csv`. Import formats: `Jsonl`, `OtlpProto`. Signal types: `Traces`, `Logs`, `Metrics`.
+- **`src/cli.rs`** — clap derive command definitions (Server, View, Traces, Logs, Metrics, Sql, ServiceMap, Export, Latency, Clear, Status, Shutdown, Replay, Import, SkillInstall, Init, Mcp, Config). Output formats: `Text`, `Table`, `Jsonl`, `Csv`. Import formats: `Jsonl`, `OtlpProto`. Signal types: `Traces`, `Logs`, `Metrics`. Each args struct has a `resolve()` method that merges with config.
+- **`src/config.rs`** — TOML config file support (`~/.config/motel/config.toml` or `$XDG_CONFIG_HOME/motel/config.toml`). Defines `Config`, `ServerConfig`, `TuiConfig`, `DefaultsConfig` structs. Loaded at startup in `main.rs`; CLI args are resolved against config with precedence: CLI flag > config file > hardcoded default. Includes `config init/path/show` subcommand logic.
 - **`proto/query.proto`** — Custom query/follow/clear/status/shutdown/SQL gRPC API. Standard OTLP protos are vendored in `proto/opentelemetry-proto/` (originally from OpenTelemetry v1.9.0, Apache 2.0 licensed).
 - **`build.rs`** — Compiles protobuf files via `tonic_prost_build`.
 

@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::cli::ViewArgs;
+use crate::cli::ResolvedViewArgs;
 use crate::otel::{
     common::v1::{AnyValue, KeyValue, any_value},
     logs::v1::ResourceLogs,
@@ -13,7 +13,7 @@ use crate::query_proto::{
 use crate::query_proto::query_service_client::QueryServiceClient;
 use crate::store::{SharedStore, Store};
 
-pub async fn run(args: ViewArgs) -> Result<()> {
+pub async fn run(args: ResolvedViewArgs) -> Result<()> {
     let multi_server = args.addr.len() > 1;
 
     // Create a single local store to merge all servers' data

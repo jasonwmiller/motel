@@ -1,12 +1,12 @@
 use anyhow::Result;
 
-use crate::cli::{LogsArgs, OutputFormat};
+use crate::cli::{OutputFormat, ResolvedLogsArgs};
 use crate::client::trace::format_timestamp_ns;
 use crate::client::{extract_request_trace_id, parse_attributes, print_table};
 use crate::query_proto::query_service_client::QueryServiceClient;
 use crate::query_proto::{FollowRequest, QueryLogsRequest};
 
-pub async fn run(args: LogsArgs) -> Result<()> {
+pub async fn run(args: ResolvedLogsArgs) -> Result<()> {
     if args.follow {
         return run_follow(args).await;
     }
@@ -135,7 +135,7 @@ fn format_any_value(v: &crate::otel::common::v1::AnyValue) -> String {
     }
 }
 
-async fn run_follow(args: LogsArgs) -> Result<()> {
+async fn run_follow(args: ResolvedLogsArgs) -> Result<()> {
     let mut client = QueryServiceClient::connect(args.addr.clone()).await?;
 
     let mut stream = client

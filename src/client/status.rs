@@ -1,10 +1,10 @@
 use anyhow::Result;
 
-use crate::cli::StatusArgs;
+use crate::cli::ResolvedStatusArgs;
 use crate::query_proto::StatusRequest;
 use crate::query_proto::query_service_client::QueryServiceClient;
 
-pub async fn run(args: StatusArgs) -> Result<()> {
+pub async fn run(args: ResolvedStatusArgs) -> Result<()> {
     let mut client = QueryServiceClient::connect(args.addr.clone()).await?;
 
     let response = client

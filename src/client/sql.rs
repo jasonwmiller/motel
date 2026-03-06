@@ -1,11 +1,11 @@
 use anyhow::Result;
 
-use crate::cli::{OutputFormat, SqlArgs};
+use crate::cli::{OutputFormat, ResolvedSqlArgs};
 use crate::client::{extract_request_trace_id, print_table};
 use crate::query_proto::SqlQueryRequest;
 use crate::query_proto::query_service_client::QueryServiceClient;
 
-pub async fn run(args: SqlArgs) -> Result<()> {
+pub async fn run(args: ResolvedSqlArgs) -> Result<()> {
     let mut client = QueryServiceClient::connect(args.addr.clone()).await?;
 
     let request = SqlQueryRequest {
