@@ -241,8 +241,7 @@ motel service-map --since 5m
 Example ASCII output:
 ```
 Service Dependency Map
-======================
-
+===============
   frontend --(120 calls, avg 45.2ms)--> api-gateway
   api-gateway --(85 calls, avg 12.3ms)--> user-service
   api-gateway --(42 calls, avg 8.7ms)--> payment-service
@@ -256,6 +255,22 @@ Example Mermaid output:
 graph LR
     frontend["frontend"] -->|120 calls, 45.2ms avg| api_gateway["api-gateway"]
     api_gateway["api-gateway"] -->|85 calls, 12.3ms avg| user_service["user-service"]
+## Replay
+
+Replay stored data from one motel server to another OTLP endpoint:
+
+```bash
+# Replay all data from local motel to a remote collector
+motel replay --target http://collector.example.com:4317
+
+# Replay only traces from the last hour
+motel replay --target http://other:4317 --signal traces --since 1h
+
+# Replay only data from a specific service
+motel replay --target http://other:4317 --service myapp
+
+# Dry run to see what would be replayed
+motel replay --target http://other:4317 --dry-run
 ```
 
 ## Other Commands

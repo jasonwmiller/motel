@@ -114,6 +114,17 @@ motel traces --output jsonl   # JSON Lines (one JSON object per line)
 motel traces --output csv     # CSV
 ```
 
+## Replay
+
+Replay stored data from a motel server to another OTLP endpoint:
+
+```bash
+motel replay --target http://other:4317              # Replay all data
+motel replay --target http://other:4317 --signal traces --since 1h  # Traces from last hour
+motel replay --target http://other:4317 --service myapp  # Filter by service
+motel replay --target http://other:4317 --dry-run    # Preview without sending
+```
+
 ## Other Commands
 
 ```bash

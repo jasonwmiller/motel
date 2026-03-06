@@ -32,6 +32,8 @@ pub enum Command {
     Status(StatusArgs),
     /// Remotely shutdown a running server
     Shutdown(ShutdownArgs),
+    /// Replay stored data to another OTLP endpoint
+    Replay(ReplayArgs),
     /// Install Claude Code skill
     SkillInstall(SkillInstallArgs),
     /// Generate OTLP configuration for your project
@@ -271,6 +273,41 @@ pub enum InitLang {
     Rust,
     Go,
     Java,
+}
+
+#[derive(clap::Args, Clone)]
+pub struct ReplayArgs {
+    /// Target OTLP gRPC endpoint to send data to
+    #[arg(long)]
+    pub target: String,
+
+    /// Signal type(s) to replay (default: all)
+    #[arg(long, value_enum, default_value = "all")]
+    pub signal: ReplaySignal,
+
+    /// Only replay data newer than this (relative: 30s, 5m, 1h or RFC3339)
+    #[arg(long)]
+    pub since: Option<String>,
+
+    /// Filter by service name
+    #[arg(long)]
+    pub service: Option<String>,
+
+    /// Dry run — show what would be sent without sending
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Query service address (source motel server)
+    #[arg(long, default_value = "http://localhost:4319")]
+    pub addr: String,
+}
+
+#[derive(Clone, ValueEnum)]
+pub enum ReplaySignal {
+    Traces,
+    Logs,
+    Metrics,
+    All,
 }
 
 #[derive(Clone, ValueEnum)]
