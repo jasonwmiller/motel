@@ -50,8 +50,16 @@ cargo run -- skill-install --global  # Install skill globally
   - Uses broadcast channel events for real-time updates with dirty tracking for efficient refresh.
 - **`src/install.rs`** — `skill-install` subcommand logic. Embeds `skills/motel/SKILL.md` via `include_str!`.
 - **`src/cli.rs`** — clap derive command definitions (Server, View, Traces, Logs, Metrics, Sql, Clear, Status, Shutdown, SkillInstall). Output formats: `Text`, `Table`, `Jsonl`, `Csv`.
-- **`proto/query.proto`** — Custom query/follow/clear/status/shutdown/SQL gRPC API. Standard OTLP protos are in `proto/opentelemetry-proto/` (git submodule).
+- **`proto/query.proto`** — Custom query/follow/clear/status/shutdown/SQL gRPC API. Standard OTLP protos are vendored in `proto/opentelemetry-proto/` (originally from OpenTelemetry v1.9.0, Apache 2.0 licensed).
 - **`build.rs`** — Compiles protobuf files via `tonic_prost_build`.
+
+## Installation
+
+```bash
+cargo install --git https://github.com/jasonwmiller/motel
+```
+
+Proto files are vendored directly in the repo (not a git submodule), so `cargo install --git` works without any extra steps. License: MIT.
 
 ## TUI Layout Reference
 

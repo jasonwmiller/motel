@@ -7,7 +7,7 @@ motel receives traces, logs, and metrics via standard OTLP gRPC/HTTP, stores the
 ## Install
 
 ```bash
-cargo install --path .
+cargo install --git https://github.com/jasonwmiller/motel
 ```
 
 ## Quick Start

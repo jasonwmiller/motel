@@ -2,6 +2,12 @@
 name = "motel"
 version = "0.1.0"
 edition = "2024"
+description = "In-memory OpenTelemetry server with querying and TUI visualization"
+license = "MIT"
+repository = "https://github.com/jasonwmiller/motel"
+keywords = ["opentelemetry", "otlp", "observability", "tui", "tracing"]
+categories = ["command-line-utilities", "development-tools::profiling"]
+readme = "README.md"
 
 [[bin]]
 name = "motel"
