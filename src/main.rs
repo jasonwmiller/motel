@@ -1,6 +1,7 @@
 pub mod cli;
 pub mod client;
 pub mod install;
+pub mod mcp;
 pub mod persist;
 pub mod query;
 pub mod server;
@@ -90,5 +91,6 @@ async fn main() -> anyhow::Result<()> {
         Command::Import(args) => client::import::run(args).await,
         Command::SkillInstall(args) => install::run(args),
         Command::Init(args) => client::init::run(args),
+        Command::Mcp(args) => mcp::run(args).await,
     }
 }

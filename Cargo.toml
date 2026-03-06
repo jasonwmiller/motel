@@ -43,6 +43,8 @@ tonic-prost = "0.14.5"
 tracing = "0.1.44"
 tracing-opentelemetry = "0.32.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rmcp = { version = "1.1.0", features = ["server", "transport-async-rw"] }
+schemars = "1.2.1"
 
 [dev-dependencies]
 hex = "0.4.3"
