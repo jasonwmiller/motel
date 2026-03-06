@@ -14,6 +14,9 @@ use tonic::transport::Server;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
 
+use crate::alert::AlertEngine;
+use crate::alert::notifier::NotificationTarget;
+use crate::alert::rule::AlertRule;
 use crate::cli::{PersistFormat, ResolvedServerArgs};
 use crate::otel::collector::{
     logs::v1::logs_service_server::LogsServiceServer,
@@ -172,6 +175,34 @@ pub async fn run(args: ResolvedServerArgs) -> anyhow::Result<()> {
             .await
             .context("Query gRPC server failed")
     });
+
+    // Start alert engine if rules are configured
+    if !args.alert_rules.is_empty() {
+        let rules: Vec<AlertRule> = args
+            .alert_rules
+            .iter()
+            .map(|s| AlertRule::parse(s))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| anyhow::anyhow!("failed to parse alert rules: {e}"))?;
+
+        let mut targets = Vec::new();
+        if let Some(ref url) = args.alert_webhook {
+            targets.push(NotificationTarget::Webhook { url: url.clone() });
+        }
+        if let Some(ref cmd) = args.alert_cmd {
+            targets.push(NotificationTarget::ShellCommand { cmd: cmd.clone() });
+        }
+        // Default to stderr if no other target specified, or if explicitly requested
+        if args.alert_stderr || targets.is_empty() {
+            targets.push(NotificationTarget::Stderr);
+        }
+
+        let engine = AlertEngine::new(rules, targets);
+        let alert_event_rx = event_tx.subscribe();
+        tokio::spawn(async move {
+            engine.run(alert_event_rx).await;
+        });
+    }
 
     // Start TUI if enabled
     let tui_handle = if !args.no_tui {
