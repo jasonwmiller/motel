@@ -4,7 +4,7 @@ This file provides guidance to AI coding agents when working with code in this r
 
 ## Project Overview
 
-motel is a Rust CLI tool that acts as an in-memory OpenTelemetry (OTLP) server with querying and TUI visualization. It receives traces, logs, and metrics via standard OTLP gRPC/HTTP, stores them in memory with FIFO eviction, and provides a custom gRPC query API (including a DataFusion-based SQL engine) plus an interactive terminal UI.
+motel (Memory OTel) is a Rust CLI tool that acts as an in-memory OpenTelemetry (OTLP) server with querying and TUI visualization. It receives traces, logs, and metrics via standard OTLP gRPC/HTTP, stores them in memory with FIFO eviction, and provides a custom gRPC query API (including a DataFusion-based SQL engine) plus an interactive terminal UI.
 
 ## Build & Development Commands
 
@@ -56,10 +56,14 @@ cargo run -- skill-install --global  # Install skill globally
 ## Installation
 
 ```bash
+# Homebrew
+brew install jasonwmiller/tap/motel
+
+# Cargo (from source)
 cargo install --git https://github.com/jasonwmiller/motel
 ```
 
-Proto files are vendored directly in the repo (not a git submodule), so `cargo install --git` works without any extra steps. License: MIT.
+Proto files are vendored directly in the repo (not a git submodule), so `cargo install --git` works without any extra steps. Homebrew formula is in `jasonwmiller/homebrew-tap`. License: MIT.
 
 ## TUI Layout Reference
 

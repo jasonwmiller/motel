@@ -1,6 +1,13 @@
-# motel - In-Memory OpenTelemetry Server
+# motel — Memory OTel
 
 motel is a CLI tool that runs an in-memory OpenTelemetry (OTLP) server with querying and TUI visualization. It receives traces, logs, and metrics via standard OTLP gRPC/HTTP, stores them in memory, and provides SQL querying plus an interactive terminal UI.
+
+## Install
+
+```bash
+brew install jasonwmiller/tap/motel
+# or: cargo install --git https://github.com/jasonwmiller/motel
+```
 
 ## Starting the Server
 

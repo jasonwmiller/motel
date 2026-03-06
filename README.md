@@ -1,4 +1,4 @@
-# motel
+# motel — Memory OTel
 
 In-memory OpenTelemetry server with querying and TUI visualization.
 
@@ -7,6 +7,10 @@ motel receives traces, logs, and metrics via standard OTLP gRPC/HTTP, stores the
 ## Install
 
 ```bash
+# Homebrew
+brew install jasonwmiller/tap/motel
+
+# Cargo
 cargo install --git https://github.com/jasonwmiller/motel
 ```
 
