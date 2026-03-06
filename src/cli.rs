@@ -80,6 +80,12 @@ pub struct ServerArgs {
     /// Persistence format: sqlite (default) or parquet
     #[arg(long, default_value = "sqlite")]
     pub persist_format: PersistFormat,
+    /// Enable web UI dashboard
+    #[arg(long)]
+    pub web: bool,
+    /// Web UI listen address
+    #[arg(long, default_value = "0.0.0.0:4320")]
+    pub web_addr: String,
 }
 
 #[derive(clap::Args, Clone)]

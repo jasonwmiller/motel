@@ -1,0 +1,298 @@
+/* motel web UI — dark theme inspired by One Dark */
+:root {
+    --bg: #282c34;
+    --bg-lighter: #2c313a;
+    --bg-panel: #21252b;
+    --border: #3e4451;
+    --text: #abb2bf;
+    --text-muted: #5c6370;
+    --text-bright: #e6e6e6;
+    --accent: #61afef;
+    --green: #98c379;
+    --yellow: #e5c07b;
+    --red: #e06c75;
+    --purple: #c678dd;
+    --orange: #d19a66;
+    --teal: #56b6c2;
+    --tab-active-bg: #61afef;
+    --tab-active-text: #282c34;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: 13px;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+}
+
+header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 8px 16px;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+}
+
+header h1 {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 1px;
+}
+
+nav { display: flex; gap: 4px; }
+
+.tab {
+    padding: 4px 14px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    transition: all 0.15s;
+}
+
+.tab:hover { border-color: var(--accent); color: var(--text-bright); }
+.tab.active {
+    background: var(--tab-active-bg);
+    color: var(--tab-active-text);
+    border-color: var(--tab-active-bg);
+    font-weight: 600;
+}
+
+#status {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+#status span { color: var(--text); font-weight: 600; }
+
+#connection-status {
+    margin-left: 12px;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+}
+#connection-status.connected { background: var(--green); color: var(--bg); }
+#connection-status.disconnected { background: var(--red); color: var(--bg); }
+
+main { padding: 12px 16px; }
+
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* Tables */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+thead th {
+    text-align: left;
+    padding: 6px 10px;
+    background: var(--bg-panel);
+    color: var(--text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+tbody td {
+    padding: 4px 10px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 500px;
+}
+
+tbody tr:hover { background: var(--bg-lighter); }
+
+/* Severity colors */
+.severity-trace { color: var(--text-muted); }
+.severity-debug { color: var(--text-muted); }
+.severity-info { color: var(--green); }
+.severity-warn { color: var(--yellow); }
+.severity-error { color: var(--red); }
+.severity-fatal { color: var(--red); font-weight: 700; }
+
+/* Status code colors */
+.status-ok { color: var(--green); }
+.status-error { color: var(--red); }
+.status-unset { color: var(--text-muted); }
+
+/* Traces */
+#traces-tab .trace-list { margin-bottom: 16px; }
+
+.trace-row { cursor: pointer; }
+.trace-row:hover { background: var(--bg-lighter); }
+
+#trace-detail {
+    display: none;
+    margin-top: 12px;
+    padding: 12px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+
+#trace-detail.active { display: block; }
+
+.trace-detail-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.trace-detail-header .back-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 2px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+}
+
+.trace-detail-header .back-btn:hover { border-color: var(--accent); }
+
+.waterfall {
+    width: 100%;
+    font-size: 12px;
+}
+
+.waterfall td { padding: 2px 8px; }
+
+.waterfall .span-name {
+    white-space: nowrap;
+    min-width: 200px;
+}
+
+.waterfall .span-bar-cell {
+    width: 100%;
+    position: relative;
+}
+
+.span-bar-container {
+    position: relative;
+    height: 18px;
+    width: 100%;
+}
+
+.span-bar {
+    position: absolute;
+    height: 14px;
+    top: 2px;
+    border-radius: 2px;
+    min-width: 2px;
+    opacity: 0.85;
+}
+
+.span-bar:hover { opacity: 1; }
+
+.span-duration {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    padding-left: 4px;
+}
+
+/* SQL tab */
+#sql-tab {
+    display: none;
+}
+#sql-tab.active { display: flex; flex-direction: column; gap: 8px; }
+
+.sql-controls {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+}
+
+#sql-input {
+    flex: 1;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    padding: 8px 10px;
+    resize: vertical;
+    min-height: 60px;
+    max-height: 200px;
+}
+
+#sql-input:focus { outline: none; border-color: var(--accent); }
+
+#sql-run {
+    padding: 8px 20px;
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+#sql-run:hover { opacity: 0.9; }
+#sql-run:disabled { opacity: 0.5; cursor: not-allowed; }
+
+#sql-error {
+    color: var(--red);
+    font-size: 12px;
+    padding: 6px 10px;
+    background: rgba(224, 108, 117, 0.1);
+    border-radius: 4px;
+    display: none;
+}
+
+#sql-results-container {
+    max-height: calc(100vh - 250px);
+    overflow: auto;
+}
+
+/* Metrics */
+.metric-value { font-weight: 600; color: var(--accent); }
+.metric-type {
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: var(--bg-lighter);
+    color: var(--text-muted);
+}
+
+/* Empty state */
+.empty-state {
+    text-align: center;
+    padding: 40px 0;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* Scrollable table containers */
+.table-container {
+    max-height: calc(100vh - 120px);
+    overflow: auto;
+}
+
+/* Span tree indentation */
+.tree-indent { color: var(--text-muted); }

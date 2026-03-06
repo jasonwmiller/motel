@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>motel &mdash; OpenTelemetry Dashboard</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <header>
+        <h1>motel</h1>
+        <nav>
+            <button class="tab active" data-tab="logs">Logs</button>
+            <button class="tab" data-tab="traces">Traces</button>
+            <button class="tab" data-tab="metrics">Metrics</button>
+            <button class="tab" data-tab="sql">SQL</button>
+        </nav>
+        <div id="status">
+            Traces: <span id="trace-count">0</span> |
+            Spans: <span id="span-count">0</span> |
+            Logs: <span id="log-count">0</span> |
+            Metrics: <span id="metric-count">0</span>
+            <span id="connection-status" class="disconnected">disconnected</span>
+        </div>
+    </header>
+
+    <main>
+        <div id="logs-tab" class="tab-content active">
+            <div class="table-container">
+                <table id="logs-table">
+                    <thead><tr><th>Time</th><th>Service</th><th>Severity</th><th>Body</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+                <div class="empty-state" id="logs-empty">No logs received yet</div>
+            </div>
+        </div>
+
+        <div id="traces-tab" class="tab-content">
+            <div class="trace-list">
+                <div class="table-container">
+                    <table id="traces-table">
+                        <thead><tr><th>Trace ID</th><th>Service</th><th>Root Span</th><th>Spans</th><th>Duration</th><th>Time</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                    <div class="empty-state" id="traces-empty">No traces received yet</div>
+                </div>
+            </div>
+            <div id="trace-detail">
+                <div class="trace-detail-header">
+                    <button class="back-btn" id="trace-back">&larr; Back</button>
+                    <span id="trace-detail-title"></span>
+                </div>
+                <div class="table-container">
+                    <table class="waterfall" id="waterfall-table">
+                        <thead><tr><th>Span</th><th>Timeline</th><th>Duration</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="metrics-tab" class="tab-content">
+            <div class="table-container">
+                <table id="metrics-table">
+                    <thead><tr><th>Metric</th><th>Service</th><th>Type</th><th>Value</th><th>Unit</th><th>Data Points</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+                <div class="empty-state" id="metrics-empty">No metrics received yet</div>
+            </div>
+        </div>
+
+        <div id="sql-tab" class="tab-content">
+            <div class="sql-controls">
+                <textarea id="sql-input" placeholder="SELECT * FROM traces LIMIT 10" rows="3">SELECT * FROM traces LIMIT 10</textarea>
+                <button id="sql-run">Run</button>
+            </div>
+            <div id="sql-error"></div>
+            <div id="sql-results-container">
+                <table id="sql-results">
+                    <thead></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <script src="/app.js"></script>
+</body>
+</html>

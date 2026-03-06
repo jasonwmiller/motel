@@ -53,6 +53,34 @@ Default ports:
 - **4317** — gRPC OTLP ingestion
 - **4318** — HTTP OTLP ingestion + JSON query API (`/api/*`)
 - **4319** — Query service
+- **4320** — Web UI (when `--web` is enabled)
+
+## Web UI
+
+```bash
+# Start server with web dashboard
+motel server --web
+
+# Custom address
+motel server --web --web-addr 0.0.0.0:8080
+```
+
+Open `http://localhost:4320` in a browser to access the dashboard. The web UI provides:
+
+- **Logs tab** — Log records with time, service, severity, and body
+- **Traces tab** — Trace groups with drill-down waterfall/timeline view
+- **Metrics tab** — Aggregated metrics table with values and data point counts
+- **SQL tab** — Interactive SQL query editor with tabular results
+
+Real-time updates via Server-Sent Events (SSE) -- the dashboard automatically refreshes when new data arrives. All assets are embedded in the binary; no external files or build step needed.
+
+REST API endpoints are also available for programmatic access:
+- `GET /api/status` — Trace/span/log/metric counts
+- `GET /api/traces` — Trace groups with span trees
+- `GET /api/logs` — Log records
+- `GET /api/metrics` — Aggregated metrics
+- `GET /api/sql?q=SELECT...` — Execute SQL queries
+- `GET /api/events` — SSE stream for real-time notifications
 
 ## Persistence
 
