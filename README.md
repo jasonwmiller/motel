@@ -145,6 +145,48 @@ Optional env vars for more detail:
 - `OTEL_METRIC_EXPORT_INTERVAL=10000` — faster metric export (default 60s)
 - `OTEL_LOGS_EXPORT_INTERVAL=5000` — log export interval (default 5s)
 
+## OpenAI Codex CLI Telemetry
+
+motel also works with [Codex CLI](https://github.com/openai/codex). Configure via `~/.codex/config.toml`:
+
+```toml
+[otel]
+exporter = { otlp-grpc = {
+  endpoint = "http://localhost:4317"
+}}
+```
+
+Or for HTTP:
+
+```toml
+[otel]
+exporter = { otlp-http = {
+  endpoint = "http://localhost:4318/v1/logs",
+  protocol = "binary"
+}}
+```
+
+Codex emits structured log events:
+
+| Event | Description |
+|-------|-------------|
+| `codex.conversation_starts` | Model and policy configuration |
+| `codex.api_request` | Status, duration, errors |
+| `codex.sse_event` | Stream processing with token counts |
+| `codex.user_prompt` | Prompt length (content redacted by default) |
+| `codex.tool_decision` | Tool permission decisions |
+| `codex.tool_result` | Tool execution results |
+
+Set `log_user_prompt = true` in `[otel]` to include prompt content.
+
+```bash
+# View Codex events
+motel view  # switch to Logs tab
+
+# Query Codex events
+motel sql "SELECT * FROM logs WHERE body LIKE '%codex%' ORDER BY timestamp DESC LIMIT 20"
+```
+
 ## Self-Instrumentation
 
 motel can report its own traces to itself:
