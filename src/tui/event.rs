@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use crate::store::StoreEvent;
 
-use super::app::{App, Tab};
+use super::app::{App, Tab, TraceView};
 
 /// Possible outcomes from handling an event.
 pub enum EventResult {
@@ -30,36 +30,27 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> EventResult {
         return EventResult::Quit;
     }
 
-    // When detail overlay is open, handle scroll keys for the overlay
-    if app.detail_open {
+    // When in timeline view, intercept q and Esc to go back instead of quit
+    let in_timeline = matches!(app.trace_view, TraceView::Timeline(_));
+
+    if in_timeline {
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => {
-                app.detail_open = false;
-            }
-            KeyCode::Up | KeyCode::Char('k') => {
-                app.detail_scroll = app.detail_scroll.saturating_sub(1);
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                app.detail_scroll = app.detail_scroll.saturating_add(1);
-            }
-            KeyCode::PageUp => {
-                app.detail_scroll = app.detail_scroll.saturating_sub(10);
-            }
-            KeyCode::PageDown => {
-                app.detail_scroll = app.detail_scroll.saturating_add(10);
+                app.close_timeline();
+                return EventResult::Continue;
             }
             KeyCode::Enter => {
-                app.detail_open = false;
+                return EventResult::Continue;
             }
             _ => {}
         }
-        return EventResult::Continue;
     }
 
     match key.code {
         KeyCode::Char('q') | KeyCode::Esc => {
             return EventResult::Quit;
         }
+
         KeyCode::Tab => {
             if key.modifiers.contains(KeyModifiers::SHIFT) {
                 app.prev_tab();
@@ -70,39 +61,48 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> EventResult {
         KeyCode::BackTab => {
             app.prev_tab();
         }
-        KeyCode::Char('1') => {
-            app.select_tab(Tab::Traces);
+
+        KeyCode::Char('1') => app.select_tab(Tab::Logs),
+        KeyCode::Char('2') => app.select_tab(Tab::Traces),
+        KeyCode::Char('3') => app.select_tab(Tab::Metrics),
+
+        KeyCode::Char('f') => app.toggle_follow(),
+
+        // Toggle metric graph mode (only on Metrics tab with enough data points)
+        KeyCode::Char('g') => {
+            if matches!(app.current_tab, Tab::Metrics) {
+                app.metric_graph_mode = !app.metric_graph_mode;
+                app.detail_scroll = 0;
+            }
         }
-        KeyCode::Char('2') => {
-            app.select_tab(Tab::Logs);
-        }
-        KeyCode::Char('3') => {
-            app.select_tab(Tab::Metrics);
-        }
+
         KeyCode::Up | KeyCode::Char('k') => app.move_up(),
         KeyCode::Down | KeyCode::Char('j') => app.move_down(),
+
+        // PgUp/PgDn scroll the detail pane
         KeyCode::PageUp => {
-            let page = crossterm::terminal::size()
-                .map(|(_, h)| h.saturating_sub(5) as usize)
-                .unwrap_or(20);
-            app.page_up(page);
+            app.detail_scroll = app.detail_scroll.saturating_sub(10);
         }
         KeyCode::PageDown => {
-            let page = crossterm::terminal::size()
-                .map(|(_, h)| h.saturating_sub(5) as usize)
-                .unwrap_or(20);
-            app.page_down(page);
+            app.detail_scroll = app.detail_scroll.saturating_add(10);
         }
+
         KeyCode::Home => app.home(),
         KeyCode::End => app.end(),
-        KeyCode::Enter => app.toggle_detail(),
+
+        KeyCode::Enter => {
+            if matches!(app.current_tab, Tab::Traces) {
+                app.open_trace();
+            }
+        }
+
         _ => {}
     }
 
     EventResult::Continue
 }
 
-/// Handle a store event by marking the appropriate tab dirty.
+/// Handle a store event by updating app state.
 pub fn handle_store_event(app: &mut App, event: &StoreEvent) {
     app.handle_store_event(event);
 }

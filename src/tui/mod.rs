@@ -49,7 +49,7 @@ async fn run_loop(
 
     // Initial load
     app.refresh_from_store(store).await;
-    terminal.draw(|f| ui::draw(f, &app))?;
+    terminal.draw(|f| ui::draw(f, &mut app))?;
 
     loop {
         // Drain any pending store events (non-blocking)
@@ -74,7 +74,7 @@ async fn run_loop(
         // If any tab is dirty, refresh data and redraw
         if app.any_dirty() {
             app.refresh_from_store(store).await;
-            terminal.draw(|f| ui::draw(f, &app))?;
+            terminal.draw(|f| ui::draw(f, &mut app))?;
         }
 
         // Poll for crossterm events with a short timeout so we can
@@ -87,10 +87,10 @@ async fn run_loop(
                         EventResult::Quit => return Ok(()),
                     }
                     // Redraw after input
-                    terminal.draw(|f| ui::draw(f, &app))?;
+                    terminal.draw(|f| ui::draw(f, &mut app))?;
                 }
                 Event::Resize(_, _) => {
-                    terminal.draw(|f| ui::draw(f, &app))?;
+                    terminal.draw(|f| ui::draw(f, &mut app))?;
                 }
                 _ => {}
             }
