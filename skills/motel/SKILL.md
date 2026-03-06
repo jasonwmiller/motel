@@ -158,6 +158,32 @@ motel export traces -o proto > traces.binpb    # Binary protobuf (length-delimit
 
 Supported formats: `text`, `jsonl` (default), `csv`, `proto`.
 
+## HTTP/JSON Query API
+
+Query motel via HTTP (same port as OTLP HTTP, default 4318):
+
+```bash
+# Query traces
+curl http://localhost:4318/api/traces?service=myapp&since=5m
+
+# Query logs
+curl http://localhost:4318/api/logs?severity=ERROR&limit=50
+
+# Query metrics
+curl http://localhost:4318/api/metrics?name=http.request.duration
+
+# SQL query
+curl -X POST http://localhost:4318/api/sql \
+  -H 'Content-Type: application/json' \
+  -d '{"query": "SELECT * FROM traces LIMIT 10"}'
+
+# Server status
+curl http://localhost:4318/api/status
+
+# Clear data
+curl -X POST http://localhost:4318/api/clear/all
+```
+
 ## Other Commands
 
 ```bash
