@@ -21,6 +21,8 @@ pub struct ServerConfig {
     pub max_traces: Option<u64>,
     pub max_logs: Option<u64>,
     pub max_metrics: Option<u64>,
+    /// Maximum age of stored data (e.g., "30s", "5m", "1h", "2d")
+    pub max_age: Option<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -47,9 +49,8 @@ pub fn load() -> anyhow::Result<Config> {
     match config_path() {
         Some(path) if path.exists() => {
             let contents = std::fs::read_to_string(&path)?;
-            let config: Config = toml::from_str(&contents).map_err(|e| {
-                anyhow::anyhow!("invalid config file at {}: {}", path.display(), e)
-            })?;
+            let config: Config = toml::from_str(&contents)
+                .map_err(|e| anyhow::anyhow!("invalid config file at {}: {}", path.display(), e))?;
             Ok(config)
         }
         _ => Ok(Config::default()),
@@ -82,6 +83,9 @@ pub fn generate_default() -> String {
 
 # Maximum number of metric batches to keep
 # max_metrics = 100000
+
+# Maximum age of stored data (e.g., "30s", "5m", "1h", "2d")
+# max_age = "1h"
 
 [tui]
 # Placeholder for future theme/color settings
@@ -155,7 +159,10 @@ mod tests {
         assert_eq!(config.server.max_metrics, Some(50000));
         assert_eq!(config.tui.theme.as_deref(), Some("dark"));
         assert_eq!(config.defaults.output_format.as_deref(), Some("jsonl"));
-        assert_eq!(config.defaults.addr.as_deref(), Some("http://localhost:5319"));
+        assert_eq!(
+            config.defaults.addr.as_deref(),
+            Some("http://localhost:5319")
+        );
     }
 
     #[test]

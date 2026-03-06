@@ -2,6 +2,21 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::config::{self, Config};
 
+/// Parse a duration string like "30s", "5m", "1h", "2d" into a `std::time::Duration`.
+fn parse_duration_arg(s: &str) -> Result<std::time::Duration, String> {
+    let (num_str, unit) = s.split_at(s.len().saturating_sub(1));
+    let num: u64 = num_str
+        .parse()
+        .map_err(|_| format!("Invalid duration: {}", s))?;
+    match unit {
+        "s" => Ok(std::time::Duration::from_secs(num)),
+        "m" => Ok(std::time::Duration::from_secs(num * 60)),
+        "h" => Ok(std::time::Duration::from_secs(num * 3600)),
+        "d" => Ok(std::time::Duration::from_secs(num * 86400)),
+        _ => Err(format!("Invalid duration unit in: {}. Use s/m/h/d.", s)),
+    }
+}
+
 #[derive(Parser)]
 #[command(
     name = "motel",
@@ -86,6 +101,9 @@ pub struct ServerArgs {
     /// Persistence format: sqlite (default) or parquet
     #[arg(long, default_value = "sqlite")]
     pub persist_format: PersistFormat,
+    /// Maximum age of stored data (e.g., 30s, 5m, 1h, 2d). When set, data older than this is periodically evicted.
+    #[arg(long, value_parser = parse_duration_arg)]
+    pub max_age: Option<std::time::Duration>,
     /// Fraction of traces to store (0.0-1.0). 1.0 = store all, 0.1 = store ~10%.
     /// Sampling is by trace_id hash so all spans of a sampled trace are kept.
     #[arg(long, default_value = "1.0", value_parser = parse_sample_rate)]
@@ -139,6 +157,7 @@ pub struct ResolvedServerArgs {
     pub max_traces: u64,
     pub max_logs: u64,
     pub max_metrics: u64,
+    pub max_age: Option<std::time::Duration>,
     pub persist: Option<String>,
     pub persist_format: PersistFormat,
     pub sample_rate: f64,
@@ -187,6 +206,12 @@ impl ServerArgs {
             max_traces: self.max_traces.or(config.max_traces).unwrap_or(10000),
             max_logs: self.max_logs.or(config.max_logs).unwrap_or(100000),
             max_metrics: self.max_metrics.or(config.max_metrics).unwrap_or(100000),
+            max_age: self.max_age.or_else(|| {
+                config
+                    .max_age
+                    .as_deref()
+                    .and_then(|s| parse_duration_arg(s).ok())
+            }),
             persist: self.persist,
             persist_format: self.persist_format,
             sample_rate: self.sample_rate,
@@ -846,6 +871,7 @@ mod tests {
             max_traces: Some(999),
             max_logs: None,
             max_metrics: None,
+            max_age: None,
             persist: None,
             persist_format: PersistFormat::Sqlite,
             sample_rate: 1.0,
@@ -870,6 +896,7 @@ mod tests {
             max_traces: Some(5000),
             max_logs: Some(50000),
             max_metrics: None,
+            max_age: None,
         };
         let resolved = args.resolve(&config);
         // CLI wins over config
@@ -894,6 +921,7 @@ mod tests {
             max_traces: None,
             max_logs: None,
             max_metrics: None,
+            max_age: None,
             persist: None,
             persist_format: PersistFormat::Sqlite,
             sample_rate: 1.0,
@@ -981,5 +1009,99 @@ mod tests {
         let resolved = args.resolve(&config);
         assert_eq!(resolved.addr, "http://explicit:1234");
         assert!(matches!(resolved.output, OutputFormat::Jsonl));
+    }
+
+    #[test]
+    fn test_parse_duration_arg() {
+        assert_eq!(
+            parse_duration_arg("30s").unwrap(),
+            std::time::Duration::from_secs(30)
+        );
+        assert_eq!(
+            parse_duration_arg("5m").unwrap(),
+            std::time::Duration::from_secs(300)
+        );
+        assert_eq!(
+            parse_duration_arg("1h").unwrap(),
+            std::time::Duration::from_secs(3600)
+        );
+        assert_eq!(
+            parse_duration_arg("2d").unwrap(),
+            std::time::Duration::from_secs(172800)
+        );
+        assert!(parse_duration_arg("abc").is_err());
+        assert!(parse_duration_arg("10x").is_err());
+    }
+
+    #[test]
+    fn test_server_args_resolve_max_age_from_config() {
+        let args = ServerArgs {
+            no_tui: false,
+            grpc_addr: None,
+            http_addr: None,
+            query_addr: None,
+            otlp_endpoint: None,
+            max_traces: None,
+            max_logs: None,
+            max_metrics: None,
+            max_age: None,
+            persist: None,
+            persist_format: PersistFormat::Sqlite,
+            sample_rate: 1.0,
+            sample_always: vec![],
+            web: false,
+            web_addr: "0.0.0.0:4320".to_string(),
+            forward_to: vec![],
+            forward_headers: vec![],
+            forward_timeout: 10,
+            sink: None,
+            sink_format: SinkFormat::Jsonl,
+            sink_max_size: 104857600,
+            sink_rotate_interval: "1h".to_string(),
+            prometheus: false,
+            prom_addr: "0.0.0.0:9090".to_string(),
+        };
+        let config = config::ServerConfig {
+            max_age: Some("1h".to_string()),
+            ..Default::default()
+        };
+        let resolved = args.resolve(&config);
+        assert_eq!(resolved.max_age, Some(std::time::Duration::from_secs(3600)));
+    }
+
+    #[test]
+    fn test_server_args_resolve_max_age_cli_overrides_config() {
+        let args = ServerArgs {
+            no_tui: false,
+            grpc_addr: None,
+            http_addr: None,
+            query_addr: None,
+            otlp_endpoint: None,
+            max_traces: None,
+            max_logs: None,
+            max_metrics: None,
+            max_age: Some(std::time::Duration::from_secs(60)),
+            persist: None,
+            persist_format: PersistFormat::Sqlite,
+            sample_rate: 1.0,
+            sample_always: vec![],
+            web: false,
+            web_addr: "0.0.0.0:4320".to_string(),
+            forward_to: vec![],
+            forward_headers: vec![],
+            forward_timeout: 10,
+            sink: None,
+            sink_format: SinkFormat::Jsonl,
+            sink_max_size: 104857600,
+            sink_rotate_interval: "1h".to_string(),
+            prometheus: false,
+            prom_addr: "0.0.0.0:9090".to_string(),
+        };
+        let config = config::ServerConfig {
+            max_age: Some("1h".to_string()),
+            ..Default::default()
+        };
+        let resolved = args.resolve(&config);
+        assert_eq!(resolved.max_age, Some(std::time::Duration::from_secs(60)));
     }
 }
