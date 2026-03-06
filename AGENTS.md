@@ -53,6 +53,91 @@ cargo run -- skill-install --global  # Install skill globally
 - **`proto/query.proto`** — Custom query/follow/clear/status/shutdown/SQL gRPC API. Standard OTLP protos are in `proto/opentelemetry-proto/` (git submodule).
 - **`build.rs`** — Compiles protobuf files via `tonic_prost_build`.
 
+## TUI Layout Reference
+
+### Logs Tab (master-detail 60/40)
+
+```
+┌ OTLP Viewer ─────────────────────────────────────────────────────────────┐
+│ 1:Logs(42)  |  2:Traces(18 spans (5 traces))  |  3:Metrics(6)          │
+├──────────────────────────────────────────┬────────────────────────────────┤
+│ Time          Service    Severity  Body  │ Detail                        │
+│ 14:23:01.123  auth-svc   INFO      User  │ Time: 2026-03-06 14:23:01 UTC │
+│ 14:23:01.456  api-gw     WARN      Rate  │ Service: auth-svc             │
+│▶14:23:02.789  auth-svc   ERROR     Auth  │ Severity: ERROR (17)          │
+│ 14:23:03.012  payments   INFO      Proc  │ Body: Auth token expired      │
+│ 14:23:03.234  api-gw     DEBUG     Rout  │ Trace ID: a1b2c3d4e5f6...    │
+│                                          │ Scope: auth.middleware        │
+│                                          │                               │
+│                                          │ Attributes                    │
+│                                          │   user.id: 12345             │
+│                                          │   http.status: 401           │
+├──────────────────────────────────────────┴────────────────────────────────┤
+│ Tab:switch  j/k:nav  Enter:select  PgUp/Dn:scroll  f:follow  [FOLLOW]  │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+### Traces Tab — List View
+
+```
+┌ Traces ──────────────────────────────────────────────────────────────────┐
+│ Trace ID    Service      Root Span           Spans  Duration            │
+│ a1b2c3d4    api-gw       GET /api/users      5      234.56ms            │
+│▶e5f6a7b8    auth-svc     authenticate        3      45.12ms             │
+│ c9d0e1f2    payments     process_payment     8      1.234s              │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+### Traces Tab — Timeline Waterfall (Enter on a trace)
+
+```
+┌ Timeline (Esc:back) ─────────────────────────────────────────────────────┐
+│ Span                              Timeline (234.56ms)                    │
+│▶── GET /api/users                 ████████████████████████████████        │
+│  ├─ auth.validate                   ████████                             │
+│  ├─ db.query                              ██████████████                 │
+│  │  ├─ db.connect                         ███                            │
+│  │  ├─ db.execute                            ███████████                 │
+│  ├─ serialize                                            ████            │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+### Metrics Tab (master-detail 60/40, 'g' toggles graph)
+
+```
+┌ Metrics ──────────────────────────┬──────────────────────────────────────┐
+│ Metric Name    Service  Type  Val │ Detail                               │
+│▶http.dur       api-gw   hist  c=  │ Metric Name: http.request.duration   │
+│ http.req       api-gw   sum   42  │ Service: api-gw                      │
+│ cpu.usage      motel    gauge 0.  │ Type: histogram                      │
+│                                   │ Unit: ms                             │
+│                                   │ Data Points: 24                      │
+│                                   │   Press 'g' for graph view           │
+│                                   │                                      │
+│                                   │ Recent Data Points                   │
+│                                   │   14:23:03  count=5 sum=234.500      │
+│                                   │   14:23:02  count=3 sum=123.200      │
+├───────────────────────────────────┴──────────────────────────────────────┤
+│ Tab:switch  j/k:nav  PgUp/Dn:scroll  f:follow  g:graph  q:quit [FOLLOW]│
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+### Metrics Tab — Graph View ('g' to toggle)
+
+```
+┌ http.request.duration (ms) - press 'g' for detail ──────────────────────┐
+│234.5                                                                     │
+│          █                                                               │
+│          █     █                                                         │
+│    █     █     █           █                                             │
+│    █  █  █     █  █        █  █                                          │
+│    █  █  █  █  █  █  █     █  █     █                                    │
+│ █  █  █  █  █  █  █  █  █  █  █  █  █                                   │
+│ █  █  █  █  █  █  █  █  █  █  █  █  █  █                                │
+│45.1                                                                      │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
 ## Code Patterns
 
 - Error handling: `anyhow::Result<T>` for server/CLI, `Result<_, String>` for SQL query internals.
