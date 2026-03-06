@@ -211,6 +211,21 @@ pub async fn run(args: ResolvedServerArgs) -> anyhow::Result<()> {
         None
     };
 
+    // Start file sink if configured
+    let sink_handle = if let Some(ref sink_dir) = args.sink {
+        let sink_rx = event_tx.subscribe();
+        let sink_dir = std::path::PathBuf::from(sink_dir);
+        let sink_format = args.sink_format.clone();
+        let sink_max_size = args.sink_max_size;
+        let sink_rotate_interval = crate::sink::parse_duration(&args.sink_rotate_interval)?;
+        Some(tokio::spawn(async move {
+            crate::sink::run(sink_rx, sink_dir, sink_format, sink_max_size, sink_rotate_interval)
+                .await
+        }))
+    } else {
+        None
+    };
+
     tracing::info!(
         "motel server started: gRPC={}, HTTP={}, Query={}{}",
         args.grpc_addr,
@@ -260,6 +275,16 @@ pub async fn run(args: ResolvedServerArgs) -> anyhow::Result<()> {
         } => {
             result??;
             tracing::info!("Web UI exited");
+        }
+        result = async {
+            if let Some(handle) = sink_handle {
+                handle.await
+            } else {
+                std::future::pending().await
+            }
+        } => {
+            result??;
+            tracing::warn!("Sink task exited unexpectedly");
         }
     }
 

@@ -101,6 +101,18 @@ pub struct ServerArgs {
     /// Timeout for forwarding requests in seconds
     #[arg(long, default_value = "10")]
     pub forward_timeout: u64,
+    /// Write incoming OTLP data to rotating files in this directory
+    #[arg(long)]
+    pub sink: Option<String>,
+    /// Sink file format
+    #[arg(long, default_value = "jsonl", value_enum)]
+    pub sink_format: SinkFormat,
+    /// Maximum sink file size in bytes before rotation (default: 100MB)
+    #[arg(long, default_value = "104857600")]
+    pub sink_max_size: u64,
+    /// Maximum sink file age before rotation (e.g., 1h, 30m, 24h)
+    #[arg(long, default_value = "1h")]
+    pub sink_rotate_interval: String,
 }
 
 /// Resolved server args with all defaults applied (config file + hardcoded).
@@ -121,6 +133,10 @@ pub struct ResolvedServerArgs {
     pub forward_to: Vec<String>,
     pub forward_headers: Vec<String>,
     pub forward_timeout: u64,
+    pub sink: Option<String>,
+    pub sink_format: SinkFormat,
+    pub sink_max_size: u64,
+    pub sink_rotate_interval: String,
 }
 
 impl ServerArgs {
@@ -152,6 +168,10 @@ impl ServerArgs {
             forward_to: self.forward_to,
             forward_headers: self.forward_headers,
             forward_timeout: self.forward_timeout,
+            sink: self.sink,
+            sink_format: self.sink_format,
+            sink_max_size: self.sink_max_size,
+            sink_rotate_interval: self.sink_rotate_interval,
         }
     }
 }
@@ -755,6 +775,14 @@ pub struct DiffArgs {
 }
 
 #[derive(Clone, ValueEnum)]
+pub enum SinkFormat {
+    /// One JSON object per line (newline-delimited)
+    Jsonl,
+    /// Length-prefixed protobuf binary
+    Proto,
+}
+
+#[derive(Clone, ValueEnum)]
 pub enum OutputFormat {
     Text,
     Table,
@@ -795,6 +823,10 @@ mod tests {
             forward_to: vec![],
             forward_headers: vec![],
             forward_timeout: 10,
+            sink: None,
+            sink_format: SinkFormat::Jsonl,
+            sink_max_size: 104857600,
+            sink_rotate_interval: "1h".to_string(),
         };
         let config = config::ServerConfig {
             grpc_addr: Some("9.9.9.9:1111".to_string()),
@@ -835,6 +867,10 @@ mod tests {
             forward_to: vec![],
             forward_headers: vec![],
             forward_timeout: 10,
+            sink: None,
+            sink_format: SinkFormat::Jsonl,
+            sink_max_size: 104857600,
+            sink_rotate_interval: "1h".to_string(),
         };
         let config = config::ServerConfig::default();
         let resolved = args.resolve(&config);
