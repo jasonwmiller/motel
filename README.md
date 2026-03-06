@@ -54,18 +54,28 @@ Three tables available: `traces`, `logs`, `metrics`.
 # Embedded with server
 motel server
 
-# Attach to running server
+# Attach to running server (loads existing data, then follows new)
 motel view
 motel view --addr http://remote-host:4319
 ```
 
+Three tabs: **Logs**, **Traces**, **Metrics** — each with a master-detail layout.
+
 | Key | Action |
 |-----|--------|
-| Tab / 1-3 | Switch tabs |
-| j/k / arrows | Navigate |
-| Enter | Detail view |
-| PgUp/PgDn | Page |
-| q / Esc | Quit |
+| 1 / 2 / 3 | Switch to Logs / Traces / Metrics |
+| Tab | Cycle tabs |
+| j/k | Navigate list |
+| Enter | Open trace timeline (Traces tab) |
+| Esc | Back from timeline / quit |
+| PgUp/PgDn | Scroll detail pane |
+| f | Toggle follow mode (auto-scroll to newest) |
+| g | Toggle metric graph view (Metrics tab, 5+ data points) |
+| q | Quit |
+
+**Traces tab** has two views: a trace list grouped by trace ID, and a timeline waterfall view showing the span tree with colored timing bars. Press Enter on a trace to drill into the timeline.
+
+**Metrics tab** shows aggregated metrics with summed values. Press `g` to toggle a bar chart graph of values over time.
 
 ## Output Formats
 
