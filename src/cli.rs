@@ -34,6 +34,8 @@ pub enum Command {
     Shutdown(ShutdownArgs),
     /// Replay stored data to another OTLP endpoint
     Replay(ReplayArgs),
+    /// Import telemetry data from files
+    Import(ImportArgs),
     /// Install Claude Code skill
     SkillInstall(SkillInstallArgs),
     /// Generate OTLP configuration for your project
@@ -308,6 +310,44 @@ pub enum ReplaySignal {
     Logs,
     Metrics,
     All,
+}
+
+#[derive(clap::Args, Clone)]
+pub struct ImportArgs {
+    /// File path(s) to import
+    #[arg(required = true)]
+    pub files: Vec<String>,
+
+    /// Data format (auto-detected from extension if not specified)
+    #[arg(long, short = 'f', value_enum)]
+    pub format: Option<ImportFormat>,
+
+    /// Signal type (auto-detected from filename if not specified)
+    #[arg(long, short = 't', value_enum)]
+    pub signal: Option<SignalType>,
+
+    /// OTLP gRPC endpoint to send imported data to
+    #[arg(long, default_value = "http://localhost:4317")]
+    pub addr: String,
+
+    /// Batch size for sending (number of records per request)
+    #[arg(long, default_value = "100")]
+    pub batch_size: usize,
+}
+
+#[derive(Clone, Debug, ValueEnum)]
+pub enum ImportFormat {
+    /// JSONL format (motel's export format from --output jsonl)
+    Jsonl,
+    /// OTLP protobuf binary
+    OtlpProto,
+}
+
+#[derive(Clone, Debug, ValueEnum)]
+pub enum SignalType {
+    Traces,
+    Logs,
+    Metrics,
 }
 
 #[derive(Clone, ValueEnum)]
