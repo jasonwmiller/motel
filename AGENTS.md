@@ -20,8 +20,11 @@ cargo run -- server --no-tui         # Start headless server
 cargo run -- view                    # Attach TUI to a running server (default: localhost:4319)
 cargo run -- view --addr http://h1:4319 --addr http://h2:4319  # Multi-server aggregated view
 cargo run -- traces                  # Query traces
+cargo run -- traces --follow         # Stream new traces (tail -f style)
 cargo run -- logs                    # Query logs
+cargo run -- logs --follow           # Stream new logs (tail -f style)
 cargo run -- metrics                 # Query metrics
+cargo run -- metrics --follow        # Stream new metrics (tail -f style)
 cargo run -- sql "SELECT * FROM traces"  # Run SQL query
 cargo run -- service-map             # Show service dependency graph (ASCII)
 cargo run -- service-map --format mermaid  # Show service dependency graph (Mermaid)

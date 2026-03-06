@@ -2,10 +2,14 @@ use anyhow::Result;
 
 use crate::cli::{MetricsArgs, OutputFormat};
 use crate::client::{extract_request_trace_id, print_table};
-use crate::query_proto::QueryMetricsRequest;
 use crate::query_proto::query_service_client::QueryServiceClient;
+use crate::query_proto::{FollowRequest, QueryMetricsRequest};
 
 pub async fn run(args: MetricsArgs) -> Result<()> {
+    if args.follow {
+        return run_follow(args).await;
+    }
+
     let mut client = QueryServiceClient::connect(args.addr.clone()).await?;
 
     let request = QueryMetricsRequest {
@@ -139,3 +143,97 @@ fn describe_metric_data(data: &Option<crate::otel::metrics::v1::metric::Data>) -
     }
 }
 
+async fn run_follow(args: MetricsArgs) -> Result<()> {
+    let mut client = QueryServiceClient::connect(args.addr.clone()).await?;
+
+    let mut stream = client
+        .follow_metrics(FollowRequest::default())
+        .await?
+        .into_inner();
+
+    let mut csv_writer = if matches!(args.output, OutputFormat::Csv) {
+        let mut wtr = csv::Writer::from_writer(std::io::stdout());
+        wtr.write_record(["service", "name", "unit", "data_type", "description"])?;
+        wtr.flush()?;
+        Some(wtr)
+    } else {
+        None
+    };
+
+    loop {
+        match stream.message().await {
+            Ok(Some(resp)) => {
+                for rm in &resp.resource_metrics {
+                    let service_name = extract_service_name(rm);
+                    for sm in &rm.scope_metrics {
+                        for metric in &sm.metrics {
+                            if let Some(ref svc) = args.service
+                                && &service_name != svc
+                            {
+                                continue;
+                            }
+                            if let Some(ref name) = args.name
+                                && &metric.name != name
+                            {
+                                continue;
+                            }
+
+                            let data_type = describe_metric_data(&metric.data);
+                            let row = MetricRow {
+                                service: service_name.clone(),
+                                name: metric.name.clone(),
+                                description: metric.description.clone(),
+                                unit: metric.unit.clone(),
+                                data_type,
+                            };
+
+                            match args.output {
+                                OutputFormat::Text | OutputFormat::Table => {
+                                    println!(
+                                        "{} {} ({}) [{}] {}",
+                                        row.service,
+                                        row.name,
+                                        row.unit,
+                                        row.data_type,
+                                        row.description,
+                                    );
+                                }
+                                OutputFormat::Jsonl => {
+                                    let obj = serde_json::json!({
+                                        "service": row.service,
+                                        "name": row.name,
+                                        "description": row.description,
+                                        "unit": row.unit,
+                                        "data_type": row.data_type,
+                                    });
+                                    println!("{}", serde_json::to_string(&obj)?);
+                                }
+                                OutputFormat::Csv => {
+                                    if let Some(ref mut wtr) = csv_writer {
+                                        wtr.write_record([
+                                            &row.service,
+                                            &row.name,
+                                            &row.unit,
+                                            &row.data_type,
+                                            &row.description,
+                                        ])?;
+                                        wtr.flush()?;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(None) => {
+                eprintln!("Server closed the follow stream");
+                break;
+            }
+            Err(e) => {
+                eprintln!("Follow stream error: {}", e);
+                break;
+            }
+        }
+    }
+    Ok(())
+}

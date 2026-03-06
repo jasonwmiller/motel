@@ -103,6 +103,26 @@ Three tabs: **Logs**, **Traces**, **Metrics** — each with a master-detail layo
 
 **Metrics tab** shows aggregated metrics with summed values. Press `g` to toggle a bar chart graph of values over time.
 
+## Live Tail Mode
+
+Stream new data as it arrives, like `tail -f`:
+
+```bash
+motel logs --follow
+motel logs --follow --service myapp --severity ERROR
+motel traces --follow --service myapp
+motel metrics --follow --name http.request.duration
+```
+
+Combine with output formats for piping:
+
+```bash
+motel logs --follow -o jsonl | jq 'select(.severity == "ERROR")'
+motel traces --follow -o csv >> traces.csv
+```
+
+Short flag: `-F` (e.g. `motel logs -F`). Runs until interrupted with Ctrl+C.
+
 ## Output Formats
 
 All query commands support `--output` (`-o`): `text`, `table`, `jsonl`, `csv`.

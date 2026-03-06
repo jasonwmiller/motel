@@ -103,6 +103,20 @@ motel sql "SELECT span_name, COUNT(*) as n, AVG(duration_ns)/1e6 as avg_ms, MAX(
 motel sql "SELECT t1.span_name as parent, t2.span_name as child, t2.duration_ns/1e6 as child_ms FROM traces t1 JOIN traces t2 ON t1.span_id = t2.parent_span_id ORDER BY t2.duration_ns DESC LIMIT 20"
 ```
 
+## Live Tail Mode
+
+Stream new data as it arrives (like `tail -f`), with optional filters:
+
+```bash
+motel logs --follow
+motel logs --follow --service myapp --severity ERROR -o jsonl
+motel traces --follow --service myapp
+motel traces --follow -o jsonl | jq '.span_name'
+motel metrics --follow
+```
+
+Short flag: `-F`. Runs until Ctrl+C.
+
 ## Output Formats
 
 All query commands support `--output` (`-o`):
