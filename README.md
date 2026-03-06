@@ -86,6 +86,65 @@ motel traces -o jsonl | jq .
 motel sql "SELECT * FROM traces" -o csv > export.csv
 ```
 
+## Claude Code Telemetry
+
+Use motel to collect and visualize Claude Code's OpenTelemetry data (metrics, logs/events):
+
+```bash
+# Terminal 1: Start motel headless
+motel server --no-tui
+
+# Terminal 2: Run Claude Code with telemetry pointed at motel
+export CLAUDE_CODE_ENABLE_TELEMETRY=1
+export OTEL_METRICS_EXPORTER=otlp
+export OTEL_LOGS_EXPORTER=otlp
+export OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+claude
+
+# Terminal 3: View telemetry in TUI
+motel view
+```
+
+Claude Code exports these metrics (service name: `claude-code`):
+
+| Metric | Description |
+|--------|-------------|
+| `claude_code.token.usage` | Tokens used (attributes: `type`=input/output/cacheRead, `model`) |
+| `claude_code.cost.usage` | Session cost in USD (attribute: `model`) |
+| `claude_code.session.count` | Sessions started |
+| `claude_code.lines_of_code.count` | Lines added/removed (attribute: `type`) |
+| `claude_code.commit.count` | Git commits created |
+| `claude_code.pull_request.count` | PRs created |
+| `claude_code.active_time.total` | Active time in seconds |
+| `claude_code.code_edit_tool.decision` | Tool permission decisions |
+
+And these log events: `claude_code.user_prompt`, `claude_code.tool_result`, `claude_code.api_request`, `claude_code.api_error`, `claude_code.tool_decision`.
+
+Query examples:
+
+```bash
+# Token usage by model
+motel sql "SELECT resource['model'] as model, SUM(CAST(value AS DOUBLE)) as tokens
+           FROM metrics WHERE metric_name = 'claude_code.token.usage'
+           GROUP BY model"
+
+# Cost tracking
+motel sql "SELECT * FROM metrics WHERE metric_name = 'claude_code.cost.usage'"
+
+# Tool usage from events
+motel sql "SELECT body FROM logs WHERE body LIKE '%tool_result%' LIMIT 20"
+
+# API request durations
+motel sql "SELECT body FROM logs WHERE body LIKE '%api_request%' ORDER BY timestamp DESC LIMIT 10"
+```
+
+Optional env vars for more detail:
+- `OTEL_LOG_USER_PROMPTS=1` — include prompt content in events
+- `OTEL_LOG_TOOL_DETAILS=1` — include MCP server/tool names
+- `OTEL_METRIC_EXPORT_INTERVAL=10000` — faster metric export (default 60s)
+- `OTEL_LOGS_EXPORT_INTERVAL=5000` — log export interval (default 5s)
+
 ## Self-Instrumentation
 
 motel can report its own traces to itself:
