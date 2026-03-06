@@ -125,6 +125,19 @@ motel replay --target http://other:4317 --service myapp  # Filter by service
 motel replay --target http://other:4317 --dry-run    # Preview without sending
 ```
 
+## Export
+
+Bulk dump stored data for offline analysis or backup:
+
+```bash
+motel export traces -o jsonl > traces.jsonl    # Export all traces as JSON lines
+motel export logs -o csv > logs.csv            # Export all logs as CSV
+motel export all -o jsonl > everything.jsonl   # Export all signal types
+motel export traces -o proto > traces.binpb    # Binary protobuf (length-delimited)
+```
+
+Supported formats: `text`, `jsonl` (default), `csv`, `proto`.
+
 ## Other Commands
 
 ```bash
