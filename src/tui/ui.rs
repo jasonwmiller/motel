@@ -22,7 +22,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3), // tab bar
-            Constraint::Min(5),   // main content
+            Constraint::Min(5),    // main content
             Constraint::Length(1), // status bar
         ])
         .split(f.area());
@@ -148,6 +148,12 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
         help.push(Span::styled("g", Style::default().fg(key_color)));
         help.push(Span::raw(":graph  "));
     }
+    if matches!(app.current_tab, Tab::Traces) && app.trace_view == TraceView::List {
+        help.push(Span::styled("m", Style::default().fg(key_color)));
+        help.push(Span::raw(":mark  "));
+        help.push(Span::styled("d", Style::default().fg(key_color)));
+        help.push(Span::raw(":diff  "));
+    }
     help.push(Span::styled("q", Style::default().fg(key_color)));
     help.push(Span::raw(":quit"));
 
@@ -157,8 +163,8 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
         .split(area);
 
     let left = Paragraph::new(Line::from(help)).style(Style::default().fg(Color::DarkGray));
-    let right = Paragraph::new(Line::from(follow_span))
-        .alignment(ratatui::layout::Alignment::Right);
+    let right =
+        Paragraph::new(Line::from(follow_span)).alignment(ratatui::layout::Alignment::Right);
 
     f.render_widget(left, bar_layout[0]);
     f.render_widget(right, bar_layout[1]);
@@ -330,6 +336,7 @@ fn draw_traces(f: &mut Frame, app: &App, area: Rect) {
     match &app.trace_view {
         TraceView::List => draw_traces_list(f, app, area),
         TraceView::Timeline(_) => draw_traces_timeline(f, app, area),
+        TraceView::Diff => super::diff_ui::draw_diff(f, app, area),
     }
 }
 
@@ -362,10 +369,15 @@ fn draw_traces_list(f: &mut Frame, app: &App, area: Rect) {
             let is_selected = i == selected;
             let tid = hex_encode(&group.trace_id);
             let tid_short = if tid.len() > 8 { &tid[..8] } else { &tid };
+            let is_marked = app
+                .marked_trace_id
+                .as_ref()
+                .is_some_and(|m| *m == group.trace_id);
+            let mark_indicator = if is_marked { "*" } else { "" };
             let tid_display = if is_selected {
-                format!("\u{25b6} {}", tid_short)
+                format!("\u{25b6}{} {}", mark_indicator, tid_short)
             } else {
-                tid_short.to_string()
+                format!("{}{}", mark_indicator, tid_short)
             };
             let svc_color = get_service_color(app, &group.service_name);
             let mut cells = vec![
@@ -489,8 +501,7 @@ fn draw_timeline_waterfall(f: &mut Frame, app: &App, area: Rect) {
 
             let bar_start =
                 ((span_start as f64 / trace_duration as f64) * bar_width as f64) as usize;
-            let bar_end =
-                ((span_end as f64 / trace_duration as f64) * bar_width as f64) as usize;
+            let bar_end = ((span_end as f64 / trace_duration as f64) * bar_width as f64) as usize;
             let bar_len = bar_end.saturating_sub(bar_start).max(1).min(bar_width);
             let bar_start_clamped = bar_start.min(bar_width.saturating_sub(1));
 
@@ -509,10 +520,7 @@ fn draw_timeline_waterfall(f: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let widths = [
-        Constraint::Length(name_width as u16),
-        Constraint::Fill(1),
-    ];
+    let widths = [Constraint::Length(name_width as u16), Constraint::Fill(1)];
 
     let header = Row::new(vec![
         Cell::from("Span").style(
@@ -660,8 +668,8 @@ fn draw_metric_detail(f: &mut Frame, app: &App, area: Rect) {
         return;
     };
 
-    let has_graph_data = met.data_points.len() >= 5
-        && parse_metric_values(&met.data_points).is_some();
+    let has_graph_data =
+        met.data_points.len() >= 5 && parse_metric_values(&met.data_points).is_some();
 
     if app.metric_graph_mode && has_graph_data {
         draw_metric_graph(f, app, met, area);
@@ -728,12 +736,7 @@ fn draw_metric_detail_text(
     f.render_widget(para, area);
 }
 
-fn draw_metric_graph(
-    f: &mut Frame,
-    _app: &App,
-    met: &super::app::AggregatedMetric,
-    area: Rect,
-) {
+fn draw_metric_graph(f: &mut Frame, _app: &App, met: &super::app::AggregatedMetric, area: Rect) {
     let inner_area = area.inner(ratatui::layout::Margin {
         vertical: 1,
         horizontal: 1,
@@ -830,9 +833,7 @@ fn draw_metric_graph(
 
             let buf = f.buffer_mut();
             if x < buf.area.right() && y < buf.area.bottom() {
-                buf[(x, y)]
-                    .set_char(ch)
-                    .set_fg(Color::Rgb(97, 175, 239));
+                buf[(x, y)].set_char(ch).set_fg(Color::Rgb(97, 175, 239));
             }
         }
     }
@@ -867,9 +868,7 @@ fn draw_metric_graph(
 }
 
 /// Parse metric data point values into (time_nano, f64) pairs, sorted by time ascending.
-fn parse_metric_values(
-    data_points: &[super::app::MetricDataPoint],
-) -> Option<Vec<(u64, f64)>> {
+fn parse_metric_values(data_points: &[super::app::MetricDataPoint]) -> Option<Vec<(u64, f64)>> {
     let mut values: Vec<(u64, f64)> = Vec::new();
     for dp in data_points {
         let v = dp.value.parse::<f64>().ok()?;
@@ -1036,7 +1035,10 @@ fn row_style(index: usize, selected: bool) -> Style {
 
 fn detail_line(label: &str, value: &str) -> Line<'static> {
     Line::from(vec![
-        Span::styled(format!("{}: ", label), Style::default().fg(Color::Rgb(86, 182, 194))),
+        Span::styled(
+            format!("{}: ", label),
+            Style::default().fg(Color::Rgb(86, 182, 194)),
+        ),
         Span::raw(value.to_string()),
     ])
 }

@@ -30,10 +30,10 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> EventResult {
         return EventResult::Quit;
     }
 
-    // When in timeline view, intercept q and Esc to go back instead of quit
-    let in_timeline = matches!(app.trace_view, TraceView::Timeline(_));
+    // When in timeline or diff view, intercept q and Esc to go back instead of quit
+    let in_subview = matches!(app.trace_view, TraceView::Timeline(_) | TraceView::Diff);
 
-    if in_timeline {
+    if in_subview {
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => {
                 app.close_timeline();
@@ -93,6 +93,20 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> EventResult {
         KeyCode::Enter => {
             if matches!(app.current_tab, Tab::Traces) {
                 app.open_trace();
+            }
+        }
+
+        // Mark trace for diff
+        KeyCode::Char('m') => {
+            if matches!(app.current_tab, Tab::Traces) {
+                app.mark_trace();
+            }
+        }
+
+        // Diff marked trace with selected trace
+        KeyCode::Char('d') => {
+            if matches!(app.current_tab, Tab::Traces) {
+                app.diff_traces();
             }
         }
 

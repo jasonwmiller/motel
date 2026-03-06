@@ -117,6 +117,16 @@ motel sql "SELECT * FROM logs WHERE body LIKE '%error%' LIMIT 20"
 
 Three tables available: `traces`, `logs`, `metrics`.
 
+### Trace Diff
+
+Compare two traces side-by-side to identify performance differences:
+
+```bash
+motel diff <trace_id_a> <trace_id_b>
+motel diff <trace_id_a> <trace_id_b> -o table
+motel diff <trace_id_a> <trace_id_b> --threshold 10  # highlight changes > 10%
+```
+
 ## TUI
 
 ```bash
@@ -143,9 +153,11 @@ Three tabs: **Logs**, **Traces**, **Metrics** — each with a master-detail layo
 | PgUp/PgDn | Scroll detail pane |
 | f | Toggle follow mode (auto-scroll to newest) |
 | g | Toggle metric graph view (Metrics tab, 5+ data points) |
+| m | Mark trace for diff (Traces tab) |
+| d | Diff marked trace with selected trace (Traces tab) |
 | q | Quit |
 
-**Traces tab** has two views: a trace list grouped by trace ID, and a timeline waterfall view showing the span tree with colored timing bars. Press Enter on a trace to drill into the timeline.
+**Traces tab** has three views: a trace list grouped by trace ID, a timeline waterfall view showing the span tree with colored timing bars, and a diff comparison view. Press Enter on a trace to drill into the timeline. Press `m` to mark a trace, then navigate to another trace and press `d` to compare them.
 
 **Metrics tab** shows aggregated metrics with summed values. Press `g` to toggle a bar chart graph of values over time.
 
@@ -448,6 +460,7 @@ curl -X POST http://localhost:4318/api/clear/all
 motel status                  # Trace/log/metric counts
 motel clear                   # Clear all data
 motel clear traces            # Clear only traces
+motel diff <id_a> <id_b>     # Compare two traces
 motel shutdown                # Remote shutdown
 motel init                    # Generate OTLP config (.env or language-specific)
 motel skill-install           # Install Claude Code skill

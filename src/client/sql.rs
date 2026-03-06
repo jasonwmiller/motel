@@ -81,4 +81,3 @@ pub async fn run(args: ResolvedSqlArgs) -> Result<()> {
 
     Ok(())
 }
-

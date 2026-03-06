@@ -162,6 +162,17 @@ motel export traces -o proto > traces.binpb    # Binary protobuf (length-delimit
 ```
 
 Supported formats: `text`, `jsonl` (default), `csv`, `proto`.
+### Trace Diff
+
+Compare two traces side-by-side to see performance differences:
+
+```bash
+motel diff <trace_id_a> <trace_id_b>                  # Text output
+motel diff <trace_id_a> <trace_id_b> -o table          # Table output
+motel diff <trace_id_a> <trace_id_b> --threshold 10    # Highlight changes > 10%
+```
+
+Spans are matched by `(service_name, span_name)`. Output shows duration deltas, percentage changes, added spans (+new), and removed spans.
 
 ## HTTP/JSON Query API
 
@@ -198,6 +209,7 @@ motel clear                   # Clear all stored data
 motel clear traces            # Clear only traces
 motel import traces.jsonl     # Import JSONL data (auto-detects signal from filename)
 motel import data.pb --format otlp-proto --signal traces  # Import protobuf binary
+motel diff <id_a> <id_b>     # Compare two traces
 motel shutdown                # Remotely shutdown a running server
 motel init                    # Generate .env with OTEL env vars (stdout)
 motel init -o .env            # Write .env file to disk

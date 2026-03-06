@@ -42,6 +42,8 @@ pub enum Command {
     Import(ImportArgs),
     /// Show latency histogram for a span name
     Latency(LatencyArgs),
+    /// Compare two traces side-by-side
+    Diff(DiffArgs),
     /// Install Claude Code skill
     SkillInstall(SkillInstallArgs),
     /// Generate OTLP configuration for your project
@@ -105,6 +107,8 @@ pub struct ResolvedServerArgs {
     pub max_metrics: u64,
     pub persist: Option<String>,
     pub persist_format: PersistFormat,
+    pub web: bool,
+    pub web_addr: String,
 }
 
 impl ServerArgs {
@@ -137,6 +141,8 @@ impl ServerArgs {
                 .unwrap_or(100000),
             persist: self.persist,
             persist_format: self.persist_format,
+            web: self.web,
+            web_addr: self.web_addr,
         }
     }
 }
@@ -722,6 +728,23 @@ pub enum ConfigAction {
     Show,
 }
 
+#[derive(clap::Args, Clone)]
+pub struct DiffArgs {
+    /// First trace ID (hex)
+    pub trace_id_a: String,
+    /// Second trace ID (hex)
+    pub trace_id_b: String,
+    /// Output format
+    #[arg(long, short = 'o', default_value = "text")]
+    pub output: OutputFormat,
+    /// Query service address
+    #[arg(long, default_value = "http://localhost:4319")]
+    pub addr: String,
+    /// Duration change threshold for highlighting (percentage)
+    #[arg(long, default_value = "20")]
+    pub threshold: u32,
+}
+
 #[derive(Clone, ValueEnum)]
 pub enum OutputFormat {
     Text,
@@ -758,6 +781,8 @@ mod tests {
             max_metrics: None,
             persist: None,
             persist_format: PersistFormat::Sqlite,
+            web: false,
+            web_addr: "0.0.0.0:4320".to_string(),
         };
         let config = config::ServerConfig {
             grpc_addr: Some("9.9.9.9:1111".to_string()),
@@ -793,6 +818,8 @@ mod tests {
             max_metrics: None,
             persist: None,
             persist_format: PersistFormat::Sqlite,
+            web: false,
+            web_addr: "0.0.0.0:4320".to_string(),
         };
         let config = config::ServerConfig::default();
         let resolved = args.resolve(&config);
