@@ -3,6 +3,7 @@ pub mod init;
 pub mod import;
 pub mod export;
 pub mod latency;
+pub mod diff;
 pub mod log;
 pub mod metrics;
 pub mod service_map;

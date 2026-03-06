@@ -55,6 +55,7 @@ impl Tab {
 pub enum TraceView {
     List,
     Timeline(Vec<u8>), // trace_id being viewed
+    Diff,
 }
 
 // ---------------------------------------------------------------------------
@@ -240,6 +241,11 @@ pub struct App {
     // Metric graph mode (toggle with 'g')
     pub metric_graph_mode: bool,
 
+    // Diff view state
+    pub diff_result: Option<crate::diff::DiffResult>,
+    pub diff_selected: usize,
+    pub marked_trace_id: Option<Vec<u8>>,
+
     // Service -> color mapping
     pub service_colors: HashMap<String, Color>,
 
@@ -262,6 +268,9 @@ impl App {
             log_rows: Vec::new(),
             aggregated_metrics: Vec::new(),
             metric_graph_mode: false,
+            diff_result: None,
+            diff_selected: 0,
+            marked_trace_id: None,
             trace_count: 0,
             span_count: 0,
             log_count: 0,
@@ -283,13 +292,15 @@ impl App {
 
     pub fn current_row_count(&self) -> usize {
         match self.current_tab {
-            Tab::Traces => {
-                if self.trace_view == TraceView::List {
-                    self.trace_groups.len()
-                } else {
-                    self.timeline_nodes.len()
-                }
-            }
+            Tab::Traces => match &self.trace_view {
+                TraceView::List => self.trace_groups.len(),
+                TraceView::Diff => self
+                    .diff_result
+                    .as_ref()
+                    .map(|d| d.span_diffs.len())
+                    .unwrap_or(0),
+                TraceView::Timeline(_) => self.timeline_nodes.len(),
+            },
             Tab::Logs => self.log_rows.len(),
             Tab::Metrics => self.aggregated_metrics.len(),
         }
@@ -322,10 +333,24 @@ impl App {
         self.detail_scroll = 0;
     }
 
+    /// Returns a mutable reference to the "selected index" for the current
+    /// non-list trace sub-view (timeline or diff), or None if in list mode.
+    fn trace_subview_selected(&mut self) -> Option<&mut usize> {
+        if self.current_tab == Tab::Traces {
+            match self.trace_view {
+                TraceView::Timeline(_) => Some(&mut self.timeline_selected),
+                TraceView::Diff => Some(&mut self.diff_selected),
+                TraceView::List => None,
+            }
+        } else {
+            None
+        }
+    }
+
     pub fn move_up(&mut self) {
-        if self.current_tab == Tab::Traces && self.trace_view != TraceView::List {
-            if self.timeline_selected > 0 {
-                self.timeline_selected -= 1;
+        if let Some(sel) = self.trace_subview_selected() {
+            if *sel > 0 {
+                *sel -= 1;
                 self.detail_scroll = 0;
             }
             return;
@@ -339,9 +364,9 @@ impl App {
 
     pub fn move_down(&mut self) {
         let count = self.current_row_count();
-        if self.current_tab == Tab::Traces && self.trace_view != TraceView::List {
-            if count > 0 && self.timeline_selected < count - 1 {
-                self.timeline_selected += 1;
+        if let Some(sel) = self.trace_subview_selected() {
+            if count > 0 && *sel < count - 1 {
+                *sel += 1;
                 self.detail_scroll = 0;
             }
             return;
@@ -354,8 +379,8 @@ impl App {
     }
 
     pub fn page_up(&mut self, page_size: usize) {
-        if self.current_tab == Tab::Traces && self.trace_view != TraceView::List {
-            self.timeline_selected = self.timeline_selected.saturating_sub(page_size);
+        if let Some(sel) = self.trace_subview_selected() {
+            *sel = sel.saturating_sub(page_size);
             self.detail_scroll = 0;
             return;
         }
@@ -366,9 +391,9 @@ impl App {
 
     pub fn page_down(&mut self, page_size: usize) {
         let count = self.current_row_count();
-        if self.current_tab == Tab::Traces && self.trace_view != TraceView::List {
+        if let Some(sel) = self.trace_subview_selected() {
             if count > 0 {
-                self.timeline_selected = (self.timeline_selected + page_size).min(count - 1);
+                *sel = (*sel + page_size).min(count - 1);
                 self.detail_scroll = 0;
             }
             return;
@@ -381,8 +406,8 @@ impl App {
     }
 
     pub fn home(&mut self) {
-        if self.current_tab == Tab::Traces && self.trace_view != TraceView::List {
-            self.timeline_selected = 0;
+        if let Some(sel) = self.trace_subview_selected() {
+            *sel = 0;
         } else {
             self.tab_states[self.current_tab.index()].selected = 0;
         }
@@ -392,8 +417,8 @@ impl App {
     pub fn end(&mut self) {
         let count = self.current_row_count();
         if count > 0 {
-            if self.current_tab == Tab::Traces && self.trace_view != TraceView::List {
-                self.timeline_selected = count - 1;
+            if let Some(sel) = self.trace_subview_selected() {
+                *sel = count - 1;
             } else {
                 self.tab_states[self.current_tab.index()].selected = count - 1;
             }
@@ -420,10 +445,48 @@ impl App {
         }
     }
 
-    /// Go back from timeline to trace list.
+    /// Go back from timeline or diff to trace list.
     pub fn close_timeline(&mut self) {
         self.trace_view = TraceView::List;
         self.detail_scroll = 0;
+    }
+
+    /// Mark the currently selected trace for diffing.
+    pub fn mark_trace(&mut self) {
+        if self.current_tab != Tab::Traces || self.trace_view != TraceView::List {
+            return;
+        }
+        let idx = self.tab_states[Tab::Traces.index()].selected;
+        if let Some(group) = self.trace_groups.get(idx) {
+            self.marked_trace_id = Some(group.trace_id.clone());
+        }
+    }
+
+    /// Compute diff between the marked trace and the currently selected trace.
+    pub fn diff_traces(&mut self) {
+        if self.current_tab != Tab::Traces || self.trace_view != TraceView::List {
+            return;
+        }
+        let Some(ref marked_id) = self.marked_trace_id else {
+            return;
+        };
+        let idx = self.tab_states[Tab::Traces.index()].selected;
+        let Some(current_group) = self.trace_groups.get(idx) else {
+            return;
+        };
+        // Don't diff a trace with itself
+        if *marked_id == current_group.trace_id {
+            return;
+        }
+        let Some(marked_group) = self.trace_groups.iter().find(|g| g.trace_id == *marked_id) else {
+            return;
+        };
+
+        let diff = crate::diff::compute_diff(&marked_group.spans, &current_group.spans);
+        self.diff_result = Some(diff);
+        self.diff_selected = 0;
+        self.detail_scroll = 0;
+        self.trace_view = TraceView::Diff;
     }
 
     pub fn handle_store_event(&mut self, event: &StoreEvent) {

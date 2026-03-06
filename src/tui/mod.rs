@@ -1,4 +1,5 @@
 pub mod app;
+pub mod diff_ui;
 pub mod event;
 pub mod ui;
 

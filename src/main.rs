@@ -1,6 +1,7 @@
 pub mod cli;
 pub mod client;
 pub mod config;
+pub mod diff;
 pub mod install;
 pub mod mcp;
 pub mod persist;
@@ -118,6 +119,7 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::Replay(args) => client::replay::run(args).await,
         Command::Import(args) => client::import::run(args).await,
+        Command::Diff(args) => client::diff::run(args).await,
         Command::SkillInstall(args) => install::run(args),
         Command::Init(args) => client::init::run(args),
         Command::Mcp(args) => mcp::run(args).await,
