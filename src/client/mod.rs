@@ -3,6 +3,7 @@ pub mod init;
 pub mod log;
 pub mod metrics;
 pub mod service_map;
+pub mod replay;
 pub mod shutdown;
 pub mod sql;
 pub mod status;
