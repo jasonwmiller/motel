@@ -79,6 +79,7 @@ async fn main() -> anyhow::Result<()> {
         Command::Logs(args) => client::log::run(args).await,
         Command::Metrics(args) => client::metrics::run(args).await,
         Command::Sql(args) => client::sql::run(args).await,
+        Command::ServiceMap(args) => client::service_map::run(args).await,
         Command::Clear(args) => client::clear::run(args).await,
         Command::Status(args) => client::status::run(args).await,
         Command::Shutdown(args) => client::shutdown::run(args).await,

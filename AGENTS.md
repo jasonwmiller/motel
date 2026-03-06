@@ -22,6 +22,8 @@ cargo run -- traces                  # Query traces
 cargo run -- logs                    # Query logs
 cargo run -- metrics                 # Query metrics
 cargo run -- sql "SELECT * FROM traces"  # Run SQL query
+cargo run -- service-map             # Show service dependency graph (ASCII)
+cargo run -- service-map --format mermaid  # Show service dependency graph (Mermaid)
 cargo run -- status                  # Check server status (trace/log/metric counts)
 cargo run -- shutdown                # Remotely shutdown a running server
 cargo run -- init                    # Generate .env with OTEL env vars
@@ -56,7 +58,8 @@ cargo run -- skill-install --global  # Install skill globally
   - Uses broadcast channel events for real-time updates with dirty tracking for efficient refresh.
 - **`src/install.rs`** — `skill-install` subcommand logic. Embeds `skills/motel/SKILL.md` via `include_str!`.
 - **`src/client/init.rs`** — `init` subcommand: generates OTLP config files (.env or language-specific snippets for Node, Python, Rust, Go, Java). Local-only, no server connection.
-- **`src/cli.rs`** — clap derive command definitions (Server, View, Traces, Logs, Metrics, Sql, Clear, Status, Shutdown, SkillInstall, Init). Output formats: `Text`, `Table`, `Jsonl`, `Csv`.
+- **`src/client/service_map.rs`** — `service-map` subcommand: generates service dependency graph from trace data via SQL self-join.
+- **`src/cli.rs`** — clap derive command definitions (Server, View, Traces, Logs, Metrics, Sql, ServiceMap, Clear, Status, Shutdown, SkillInstall, Init). Output formats: `Text`, `Table`, `Jsonl`, `Csv`.
 - **`proto/query.proto`** — Custom query/follow/clear/status/shutdown/SQL gRPC API. Standard OTLP protos are vendored in `proto/opentelemetry-proto/` (originally from OpenTelemetry v1.9.0, Apache 2.0 licensed).
 - **`build.rs`** — Compiles protobuf files via `tonic_prost_build`.
 

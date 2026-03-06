@@ -24,6 +24,8 @@ pub enum Command {
     Metrics(MetricsArgs),
     /// Run SQL query
     Sql(SqlArgs),
+    /// Show service dependency map
+    ServiceMap(ServiceMapArgs),
     /// Clear stored data
     Clear(ClearArgs),
     /// Check server status
@@ -180,6 +182,28 @@ pub struct SqlArgs {
     /// Query service address
     #[arg(long, default_value = "http://localhost:4319")]
     pub addr: String,
+}
+
+#[derive(clap::Args, Clone)]
+pub struct ServiceMapArgs {
+    /// Output format: ascii or mermaid
+    #[arg(long, default_value = "ascii", value_enum)]
+    pub format: ServiceMapFormat,
+    /// Filter by time window (relative: 30s, 5m, 1h, 2d or RFC3339)
+    #[arg(long)]
+    pub since: Option<String>,
+    /// Show the trace ID of this query request
+    #[arg(long)]
+    pub show_trace_id: bool,
+    /// Query service address
+    #[arg(long, default_value = "http://localhost:4319")]
+    pub addr: String,
+}
+
+#[derive(Clone, ValueEnum)]
+pub enum ServiceMapFormat {
+    Ascii,
+    Mermaid,
 }
 
 #[derive(clap::Args, Clone)]
