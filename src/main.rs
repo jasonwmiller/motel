@@ -7,6 +7,7 @@ pub mod mcp;
 pub mod persist;
 pub mod query;
 pub mod server;
+pub mod sink;
 pub mod store;
 pub mod tui;
 
