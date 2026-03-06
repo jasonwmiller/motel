@@ -72,9 +72,9 @@ pub struct ServerArgs {
 
 #[derive(clap::Args, Clone)]
 pub struct ViewArgs {
-    /// Query service address to connect to
+    /// Query service address(es) to connect to (can be specified multiple times)
     #[arg(long, default_value = "http://localhost:4319")]
-    pub addr: String,
+    pub addr: Vec<String>,
 }
 
 #[derive(clap::Args, Clone)]

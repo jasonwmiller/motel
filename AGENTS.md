@@ -18,6 +18,7 @@ cargo fmt                            # Format
 cargo run -- server                  # Start OTLP server with TUI (gRPC:4317, HTTP:4318, Query:4319)
 cargo run -- server --no-tui         # Start headless server
 cargo run -- view                    # Attach TUI to a running server (default: localhost:4319)
+cargo run -- view --addr http://h1:4319 --addr http://h2:4319  # Multi-server aggregated view
 cargo run -- traces                  # Query traces
 cargo run -- logs                    # Query logs
 cargo run -- metrics                 # Query metrics
@@ -44,6 +45,7 @@ cargo run -- skill-install --global  # Install skill globally
 - **`src/store.rs`** — Central in-memory store (`SharedStore = Arc<RwLock<Store>>`). All signal types use `VecDeque` with FIFO eviction. Traces are evicted by `trace_id` when `max_traces` is exceeded.
 - **`src/server/`** — Three listeners: `otlp_grpc.rs` (standard OTLP TraceService/LogsService/MetricsService), `otlp_http.rs` (Axum `/v1/traces`, `/v1/logs`, `/v1/metrics`), `query_grpc.rs` (custom QueryService with streaming follow support and SQL query execution).
 - **`src/client/`** — CLI query commands. Each submodule (trace, log, metrics, sql, clear) builds gRPC requests and formats output (Text/JSONL/CSV). `view.rs` queries all existing data on connect, then subscribes to Follow streams for new data, piping both into a local Store to drive the TUI. `import.rs` reads files (JSONL or OTLP protobuf) and sends data to a server via standard OTLP gRPC clients. `mod.rs` contains shared utilities.
+- **`src/client/`** — CLI query commands. Each submodule (trace, log, metrics, sql, clear) builds gRPC requests and formats output (Text/JSONL/CSV). `view.rs` supports connecting to multiple servers simultaneously (`--addr` can be specified multiple times), merging all data into a single local Store to drive the TUI. Each item is tagged with a `motel.source` resource attribute identifying its origin server. `mod.rs` contains shared utilities.
 - **`src/query/`** — SQL query engine built on DataFusion:
   - `datafusion_ctx.rs` — Creates a `SessionContext` with three registered tables (`traces`, `logs`, `metrics`). One context is created per server lifetime and reused across queries.
   - `table_provider.rs` — `OtelTable` implements DataFusion's `TableProvider`. On each `scan()`, it acquires a read lock on the store, converts data to Arrow `RecordBatch` via `arrow_convert`, then releases the lock before query execution.
@@ -205,6 +207,8 @@ Performance-critical spans (filter by `service_name = 'motel'`):
 Other spans: `otlp.{grpc,http}.export_{logs,metrics}`, `query.follow_*`, `query.clear_*`, `query.status`, `query.shutdown`, `store.clear_*`.
 
 All async spans include `busy_ns` and `idle_ns` attributes from tracing's tokio instrumentation.
+
+**Multi-server view**: When `motel view` connects to multiple servers (`--addr` specified multiple times), each item receives a `motel.source` resource attribute containing the server address (e.g., `host1:4319`). This is queryable via SQL: `SELECT * FROM traces WHERE resource['motel.source'] = 'host1:4319'`.
 
 ### Retrieving Query Trace IDs
 

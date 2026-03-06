@@ -8,6 +8,8 @@ use ratatui::{
 
 use crate::client::hex_encode;
 
+use crate::otel::common::v1::KeyValue;
+
 use super::app::{App, Tab, TraceView, format_any_value};
 
 // ---------------------------------------------------------------------------
@@ -65,6 +67,20 @@ fn get_service_color(app: &App, service: &str) -> Color {
         .get(service)
         .copied()
         .unwrap_or(Color::White)
+}
+
+// ---------------------------------------------------------------------------
+// Source server extraction
+// ---------------------------------------------------------------------------
+
+/// Extract the `motel.source` resource attribute value, if present.
+fn extract_source(resource_attrs: &[KeyValue]) -> Option<String> {
+    for kv in resource_attrs {
+        if kv.key == "motel.source" {
+            return Some(format_any_value(kv.value.as_ref()));
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -175,7 +191,12 @@ fn draw_logs(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_logs_table(f: &mut Frame, app: &App, area: Rect) {
-    let header_cells = ["Time", "Service", "Severity", "Body"].iter().map(|h| {
+    let multi = app.multi_server;
+    let mut header_names: Vec<&str> = vec!["Time", "Service", "Severity", "Body"];
+    if multi {
+        header_names.insert(1, "Source");
+    }
+    let header_cells = header_names.iter().map(|h| {
         Cell::from(*h).style(
             Style::default()
                 .fg(Color::Rgb(86, 182, 194))
@@ -203,22 +224,38 @@ fn draw_logs_table(f: &mut Frame, app: &App, area: Rect) {
                 format_timestamp(log.time_nano)
             };
             let svc_color = get_service_color(app, &log.service_name);
-            let cells = vec![
+            let mut cells = vec![
                 Cell::from(time_str),
+            ];
+            if multi {
+                let source = extract_source(&log.resource_attributes).unwrap_or_default();
+                cells.push(Cell::from(truncate(&source, 20)).style(Style::default().fg(Color::Rgb(190, 190, 190))));
+            }
+            cells.extend([
                 Cell::from(log.service_name.clone()).style(Style::default().fg(svc_color)),
                 Cell::from(log.severity_text.clone()).style(Style::default().fg(sev_color)),
                 Cell::from(truncate(&log.body, 120)),
-            ];
+            ]);
             Row::new(cells).style(row_style(i, is_selected))
         })
         .collect();
 
-    let widths = [
-        Constraint::Length(16),
-        Constraint::Length(20),
-        Constraint::Length(12),
-        Constraint::Fill(1),
-    ];
+    let widths: Vec<Constraint> = if multi {
+        vec![
+            Constraint::Length(16),
+            Constraint::Length(22),
+            Constraint::Length(20),
+            Constraint::Length(12),
+            Constraint::Fill(1),
+        ]
+    } else {
+        vec![
+            Constraint::Length(16),
+            Constraint::Length(20),
+            Constraint::Length(12),
+            Constraint::Fill(1),
+        ]
+    };
 
     let table = Table::new(rows, widths)
         .header(header)
@@ -297,15 +334,18 @@ fn draw_traces(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_traces_list(f: &mut Frame, app: &App, area: Rect) {
-    let header_cells = ["Trace ID", "Service", "Root Span", "Spans", "Duration"]
-        .iter()
-        .map(|h| {
-            Cell::from(*h).style(
-                Style::default()
-                    .fg(Color::Rgb(86, 182, 194))
-                    .add_modifier(Modifier::BOLD),
-            )
-        });
+    let multi = app.multi_server;
+    let mut header_names: Vec<&str> = vec!["Trace ID", "Service", "Root Span", "Spans", "Duration"];
+    if multi {
+        header_names.insert(1, "Source");
+    }
+    let header_cells = header_names.iter().map(|h| {
+        Cell::from(*h).style(
+            Style::default()
+                .fg(Color::Rgb(86, 182, 194))
+                .add_modifier(Modifier::BOLD),
+        )
+    });
     let header = Row::new(header_cells).height(1);
 
     let selected = app.tab_states[Tab::Traces.index()].selected;
@@ -328,24 +368,44 @@ fn draw_traces_list(f: &mut Frame, app: &App, area: Rect) {
                 tid_short.to_string()
             };
             let svc_color = get_service_color(app, &group.service_name);
-            let cells = vec![
+            let mut cells = vec![
                 Cell::from(tid_display),
+            ];
+            if multi {
+                // Extract source from the root span's resource attributes
+                let source = group.spans.first()
+                    .and_then(|s| extract_source(&s.resource_attributes))
+                    .unwrap_or_default();
+                cells.push(Cell::from(truncate(&source, 20)).style(Style::default().fg(Color::Rgb(190, 190, 190))));
+            }
+            cells.extend([
                 Cell::from(group.service_name.clone()).style(Style::default().fg(svc_color)),
                 Cell::from(truncate(&group.root_span_name, 40)),
                 Cell::from(group.span_count.to_string()),
                 Cell::from(format_duration(group.duration_ns)),
-            ];
+            ]);
             Row::new(cells).style(row_style(i, is_selected))
         })
         .collect();
 
-    let widths = [
-        Constraint::Length(12),
-        Constraint::Length(20),
-        Constraint::Fill(1),
-        Constraint::Length(8),
-        Constraint::Length(12),
-    ];
+    let widths: Vec<Constraint> = if multi {
+        vec![
+            Constraint::Length(12),
+            Constraint::Length(22),
+            Constraint::Length(20),
+            Constraint::Fill(1),
+            Constraint::Length(8),
+            Constraint::Length(12),
+        ]
+    } else {
+        vec![
+            Constraint::Length(12),
+            Constraint::Length(20),
+            Constraint::Fill(1),
+            Constraint::Length(8),
+            Constraint::Length(12),
+        ]
+    };
 
     let table = Table::new(rows, widths)
         .header(header)
@@ -512,15 +572,18 @@ fn draw_metrics(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_metrics_table(f: &mut Frame, app: &App, area: Rect) {
-    let header_cells = ["Metric Name", "Service", "Type", "Unit", "Value"]
-        .iter()
-        .map(|h| {
-            Cell::from(*h).style(
-                Style::default()
-                    .fg(Color::Rgb(86, 182, 194))
-                    .add_modifier(Modifier::BOLD),
-            )
-        });
+    let multi = app.multi_server;
+    let mut header_names: Vec<&str> = vec!["Metric Name", "Service", "Type", "Unit", "Value"];
+    if multi {
+        header_names.insert(1, "Source");
+    }
+    let header_cells = header_names.iter().map(|h| {
+        Cell::from(*h).style(
+            Style::default()
+                .fg(Color::Rgb(86, 182, 194))
+                .add_modifier(Modifier::BOLD),
+        )
+    });
     let header = Row::new(header_cells).height(1);
 
     let selected = app.tab_states[Tab::Metrics.index()].selected;
@@ -541,8 +604,14 @@ fn draw_metrics_table(f: &mut Frame, app: &App, area: Rect) {
                 met.metric_name.clone()
             };
             let svc_color = get_service_color(app, &met.service_name);
-            let cells = vec![
+            let mut cells = vec![
                 Cell::from(truncate(&name_str, 40)),
+            ];
+            if multi {
+                let source = extract_source(&met.resource_attributes).unwrap_or_default();
+                cells.push(Cell::from(truncate(&source, 20)).style(Style::default().fg(Color::Rgb(190, 190, 190))));
+            }
+            cells.extend([
                 Cell::from(met.service_name.clone()).style(Style::default().fg(svc_color)),
                 Cell::from(met.metric_type.clone()),
                 Cell::from(if met.unit.is_empty() {
@@ -551,18 +620,29 @@ fn draw_metrics_table(f: &mut Frame, app: &App, area: Rect) {
                     met.unit.clone()
                 }),
                 Cell::from(truncate(&met.display_value(), 20)),
-            ];
+            ]);
             Row::new(cells).style(row_style(i, is_selected))
         })
         .collect();
 
-    let widths = [
-        Constraint::Fill(1),
-        Constraint::Length(20),
-        Constraint::Length(14),
-        Constraint::Length(10),
-        Constraint::Length(20),
-    ];
+    let widths: Vec<Constraint> = if multi {
+        vec![
+            Constraint::Fill(1),
+            Constraint::Length(22),
+            Constraint::Length(20),
+            Constraint::Length(14),
+            Constraint::Length(10),
+            Constraint::Length(20),
+        ]
+    } else {
+        vec![
+            Constraint::Fill(1),
+            Constraint::Length(20),
+            Constraint::Length(14),
+            Constraint::Length(10),
+            Constraint::Length(20),
+        ]
+    };
 
     let table = Table::new(rows, widths)
         .header(header)
