@@ -7,12 +7,18 @@ motel receives traces, logs, and metrics via standard OTLP gRPC/HTTP, stores the
 ## Install
 
 ```bash
+# Pre-built binary (Linux x86_64 shown; see Releases for all platforms)
+curl -fsSL https://github.com/jasonwmiller/motel/releases/latest/download/motel-x86_64-unknown-linux-gnu.tar.gz | tar xz
+sudo mv motel /usr/local/bin/
+
 # Homebrew
 brew install jasonwmiller/tap/motel
 
 # Cargo
 cargo install --git https://github.com/jasonwmiller/motel
 ```
+
+Pre-built binaries are available for Linux (x86_64, aarch64), macOS (x86_64, aarch64), and Windows (x86_64) on the [Releases](https://github.com/jasonwmiller/motel/releases) page.
 
 ## Quick Start
 
