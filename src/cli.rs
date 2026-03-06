@@ -32,6 +32,8 @@ pub enum Command {
     Shutdown(ShutdownArgs),
     /// Install Claude Code skill
     SkillInstall(SkillInstallArgs),
+    /// Generate OTLP configuration for your project
+    Init(InitArgs),
 }
 
 #[derive(clap::Args, Clone)]
@@ -217,6 +219,34 @@ pub struct SkillInstallArgs {
     /// Install globally instead of for current project
     #[arg(long)]
     pub global: bool,
+}
+
+#[derive(clap::Args, Clone)]
+pub struct InitArgs {
+    /// Language-specific config (node, python, rust, go, java)
+    #[arg(long)]
+    pub lang: Option<InitLang>,
+
+    /// OTLP endpoint to use in generated config
+    #[arg(long, default_value = "http://localhost:4317")]
+    pub endpoint: String,
+
+    /// Service name to use in generated config
+    #[arg(long, default_value = "my-service")]
+    pub service_name: String,
+
+    /// Write to file instead of stdout (only for .env mode)
+    #[arg(long, short = 'o')]
+    pub output: Option<String>,
+}
+
+#[derive(Clone, ValueEnum)]
+pub enum InitLang {
+    Node,
+    Python,
+    Rust,
+    Go,
+    Java,
 }
 
 #[derive(Clone, ValueEnum)]

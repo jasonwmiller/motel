@@ -30,6 +30,19 @@ Point your app's OTLP exporter at motel:
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 ```
 
+Or generate config for your project:
+
+```bash
+motel init                              # Print .env with OTEL env vars
+motel init -o .env                      # Write .env file to disk
+motel init --lang node                  # Node.js OTLP setup snippet
+motel init --lang python                # Python OTLP setup snippet
+motel init --lang rust                  # Rust OTLP setup snippet
+motel init --lang go                    # Go OTLP setup snippet
+motel init --lang java                  # Java agent setup snippet
+motel init --endpoint http://collector:4317 --service-name myapp
+```
+
 Default ports:
 - **4317** — gRPC OTLP ingestion
 - **4318** — HTTP OTLP ingestion
@@ -211,6 +224,7 @@ motel status                  # Trace/log/metric counts
 motel clear                   # Clear all data
 motel clear traces            # Clear only traces
 motel shutdown                # Remote shutdown
+motel init                    # Generate OTLP config (.env or language-specific)
 motel skill-install           # Install Claude Code skill
 ```
 

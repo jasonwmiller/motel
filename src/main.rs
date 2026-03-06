@@ -83,5 +83,6 @@ async fn main() -> anyhow::Result<()> {
         Command::Status(args) => client::status::run(args).await,
         Command::Shutdown(args) => client::shutdown::run(args).await,
         Command::SkillInstall(args) => install::run(args),
+        Command::Init(args) => client::init::run(args),
     }
 }

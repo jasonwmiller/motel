@@ -24,6 +24,12 @@ cargo run -- metrics                 # Query metrics
 cargo run -- sql "SELECT * FROM traces"  # Run SQL query
 cargo run -- status                  # Check server status (trace/log/metric counts)
 cargo run -- shutdown                # Remotely shutdown a running server
+cargo run -- init                    # Generate .env with OTEL env vars
+cargo run -- init --lang node        # Node.js OTLP setup snippet
+cargo run -- init --lang python      # Python OTLP setup snippet
+cargo run -- init --lang rust        # Rust OTLP setup snippet
+cargo run -- init --lang go          # Go OTLP setup snippet
+cargo run -- init --lang java        # Java agent setup snippet
 cargo run -- skill-install           # Install Claude Code skill for current project
 cargo run -- skill-install --global  # Install skill globally
 ```
@@ -49,7 +55,8 @@ cargo run -- skill-install --global  # Install skill globally
   - `mod.rs` — Main event loop, terminal setup/teardown.
   - Uses broadcast channel events for real-time updates with dirty tracking for efficient refresh.
 - **`src/install.rs`** — `skill-install` subcommand logic. Embeds `skills/motel/SKILL.md` via `include_str!`.
-- **`src/cli.rs`** — clap derive command definitions (Server, View, Traces, Logs, Metrics, Sql, Clear, Status, Shutdown, SkillInstall). Output formats: `Text`, `Table`, `Jsonl`, `Csv`.
+- **`src/client/init.rs`** — `init` subcommand: generates OTLP config files (.env or language-specific snippets for Node, Python, Rust, Go, Java). Local-only, no server connection.
+- **`src/cli.rs`** — clap derive command definitions (Server, View, Traces, Logs, Metrics, Sql, Clear, Status, Shutdown, SkillInstall, Init). Output formats: `Text`, `Table`, `Jsonl`, `Csv`.
 - **`proto/query.proto`** — Custom query/follow/clear/status/shutdown/SQL gRPC API. Standard OTLP protos are vendored in `proto/opentelemetry-proto/` (originally from OpenTelemetry v1.9.0, Apache 2.0 licensed).
 - **`build.rs`** — Compiles protobuf files via `tonic_prost_build`.
 
