@@ -80,6 +80,9 @@ motel server
 # Attach to running server (loads existing data, then follows new)
 motel view
 motel view --addr http://remote-host:4319
+
+# View multiple servers merged into one TUI
+motel view --addr http://host1:4319 --addr http://host2:4319
 ```
 
 Three tabs: **Logs**, **Traces**, **Metrics** — each with a master-detail layout.

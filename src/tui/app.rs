@@ -123,6 +123,7 @@ pub struct AggregatedMetric {
     pub unit: String,
     pub description: String,
     pub data_points: Vec<MetricDataPoint>,
+    pub resource_attributes: Vec<KeyValue>,
 }
 
 impl AggregatedMetric {
@@ -241,6 +242,9 @@ pub struct App {
 
     // Service -> color mapping
     pub service_colors: HashMap<String, Color>,
+
+    // Multi-server mode: true when viewing data from multiple servers
+    pub multi_server: bool,
 }
 
 impl App {
@@ -263,6 +267,7 @@ impl App {
             log_count: 0,
             metric_count: 0,
             service_colors: HashMap::new(),
+            multi_server: false,
         }
     }
 
@@ -766,6 +771,7 @@ fn aggregate_metrics(metrics: &VecDeque<ResourceMetrics>) -> Vec<AggregatedMetri
                     unit: m.unit.clone(),
                     description: m.description.clone(),
                     data_points: Vec::new(),
+                    resource_attributes: resource_attrs.clone(),
                 });
 
                 match &m.data {

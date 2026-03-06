@@ -21,7 +21,16 @@ use self::event::{EventResult, handle_key, handle_store_event, poll_crossterm};
 /// Run the TUI, reading from the shared store and listening for events.
 pub async fn run(
     store: SharedStore,
+    event_rx: broadcast::Receiver<StoreEvent>,
+) -> anyhow::Result<()> {
+    run_with_options(store, event_rx, false).await
+}
+
+/// Run the TUI with multi-server mode option.
+pub async fn run_with_options(
+    store: SharedStore,
     mut event_rx: broadcast::Receiver<StoreEvent>,
+    multi_server: bool,
 ) -> anyhow::Result<()> {
     // Set up terminal
     enable_raw_mode()?;
@@ -30,7 +39,7 @@ pub async fn run(
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let result = run_loop(&mut terminal, &store, &mut event_rx).await;
+    let result = run_loop(&mut terminal, &store, &mut event_rx, multi_server).await;
 
     // Restore terminal
     disable_raw_mode()?;
@@ -44,8 +53,10 @@ async fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     store: &SharedStore,
     event_rx: &mut broadcast::Receiver<StoreEvent>,
+    multi_server: bool,
 ) -> anyhow::Result<()> {
     let mut app = App::new();
+    app.multi_server = multi_server;
 
     // Initial load
     app.refresh_from_store(store).await;
