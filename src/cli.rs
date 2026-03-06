@@ -144,6 +144,22 @@ pub struct ServerArgs {
     /// Prometheus scrape endpoint listen address (implies --prometheus)
     #[arg(long, default_value = "0.0.0.0:9090")]
     pub prom_addr: String,
+
+    /// Alert rule (can be specified multiple times).
+    /// Formats: "span_duration > 5s", "error_rate > 10/min",
+    /// "log_body contains 'panic'", "log_severity >= ERROR",
+    /// "metric cpu.usage > 90.0"
+    #[arg(long = "alert", value_name = "RULE")]
+    pub alert_rules: Vec<String>,
+    /// Webhook URL for alert notifications
+    #[arg(long = "alert-webhook", value_name = "URL")]
+    pub alert_webhook: Option<String>,
+    /// Shell command to run on alert (supports {message} and {rule} placeholders)
+    #[arg(long = "alert-cmd", value_name = "CMD")]
+    pub alert_cmd: Option<String>,
+    /// Print alerts to stderr (default if no other target specified)
+    #[arg(long = "alert-stderr")]
+    pub alert_stderr: bool,
 }
 
 /// Resolved server args with all defaults applied (config file + hardcoded).
@@ -173,6 +189,10 @@ pub struct ResolvedServerArgs {
     pub sink_rotate_interval: String,
     pub prometheus: bool,
     pub prom_addr: String,
+    pub alert_rules: Vec<String>,
+    pub alert_webhook: Option<String>,
+    pub alert_cmd: Option<String>,
+    pub alert_stderr: bool,
 }
 
 /// Validate sample_rate is in [0.0, 1.0]
@@ -227,6 +247,10 @@ impl ServerArgs {
             sink_rotate_interval: self.sink_rotate_interval,
             prometheus: self.prometheus,
             prom_addr: self.prom_addr,
+            alert_rules: self.alert_rules,
+            alert_webhook: self.alert_webhook,
+            alert_cmd: self.alert_cmd,
+            alert_stderr: self.alert_stderr,
         }
     }
 }
@@ -887,6 +911,10 @@ mod tests {
             sink_rotate_interval: "1h".to_string(),
             prometheus: false,
             prom_addr: "0.0.0.0:9090".to_string(),
+            alert_rules: vec![],
+            alert_webhook: None,
+            alert_cmd: None,
+            alert_stderr: false,
         };
         let config = config::ServerConfig {
             grpc_addr: Some("9.9.9.9:1111".to_string()),
@@ -937,6 +965,10 @@ mod tests {
             sink_rotate_interval: "1h".to_string(),
             prometheus: false,
             prom_addr: "0.0.0.0:9090".to_string(),
+            alert_rules: vec![],
+            alert_webhook: None,
+            alert_cmd: None,
+            alert_stderr: false,
         };
         let config = config::ServerConfig::default();
         let resolved = args.resolve(&config);
