@@ -1,6 +1,7 @@
 pub mod otlp_grpc;
 pub mod otlp_http;
 pub mod query_grpc;
+pub mod query_http;
 
 use anyhow::Context;
 use opentelemetry::trace::TracerProvider as _;
@@ -77,6 +78,12 @@ pub async fn run(args: ServerArgs) -> anyhow::Result<()> {
             s.insert_metrics_no_persist(metrics);
         }
     }
+    // Create shared store
+    let (store, _event_rx) = Store::new_shared(
+        args.max_traces as usize,
+        args.max_logs as usize,
+        args.max_metrics as usize,
+    );
 
     // Get the broadcast sender for event subscriptions
     let event_tx = store.read().await.event_tx.clone();
@@ -96,20 +103,33 @@ pub async fn run(args: ServerArgs) -> anyhow::Result<()> {
         };
         const MAX_MSG: usize = 16 * 1024 * 1024;
         Server::builder()
-            .add_service(TraceServiceServer::new(otlp_server.clone()).max_decoding_message_size(MAX_MSG))
-            .add_service(LogsServiceServer::new(otlp_server.clone()).max_decoding_message_size(MAX_MSG))
+            .add_service(
+                TraceServiceServer::new(otlp_server.clone()).max_decoding_message_size(MAX_MSG),
+            )
+            .add_service(
+                LogsServiceServer::new(otlp_server.clone()).max_decoding_message_size(MAX_MSG),
+            )
             .add_service(MetricsServiceServer::new(otlp_server).max_decoding_message_size(MAX_MSG))
             .serve(grpc_addr)
             .await
             .context("OTLP gRPC server failed")
     });
 
-    // Build OTLP HTTP service
+    // Build DataFusion context for SQL queries (needed by both HTTP and gRPC query services)
+    let session_ctx = crate::query::datafusion_ctx::create_context(store.clone()).await?;
+
+    // Build OTLP HTTP service merged with query HTTP API
     let http_addr: std::net::SocketAddr = args.http_addr.parse().context("invalid HTTP address")?;
     let otlp_http_store = store.clone();
+    let query_http_state = query_http::QueryHttpState {
+        store: store.clone(),
+        session_ctx: session_ctx.clone(),
+    };
     let otlp_http_handle = tokio::spawn(async move {
         tracing::info!("OTLP HTTP listening on {}", http_addr);
-        let router = otlp_http::router(otlp_http_store);
+        let otlp_router = otlp_http::router(otlp_http_store);
+        let query_router = query_http::router(query_http_state);
+        let router = otlp_router.merge(query_router);
         let listener = tokio::net::TcpListener::bind(http_addr)
             .await
             .context("failed to bind OTLP HTTP address")?;
@@ -117,9 +137,6 @@ pub async fn run(args: ServerArgs) -> anyhow::Result<()> {
             .await
             .context("OTLP HTTP server failed")
     });
-
-    // Build DataFusion context for SQL queries
-    let session_ctx = crate::query::datafusion_ctx::create_context(store.clone()).await?;
 
     // Build Query gRPC service
     let query_addr = args.query_addr.parse().context("invalid query address")?;
@@ -132,7 +149,9 @@ pub async fn run(args: ServerArgs) -> anyhow::Result<()> {
     let query_grpc_handle = tokio::spawn(async move {
         tracing::info!("Query gRPC listening on {}", query_addr);
         Server::builder()
-            .add_service(QueryServiceServer::new(query_service).max_decoding_message_size(16 * 1024 * 1024))
+            .add_service(
+                QueryServiceServer::new(query_service).max_decoding_message_size(16 * 1024 * 1024),
+            )
             .serve(query_addr)
             .await
             .context("Query gRPC server failed")

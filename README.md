@@ -51,7 +51,7 @@ motel init --endpoint http://collector:4317 --service-name myapp
 
 Default ports:
 - **4317** — gRPC OTLP ingestion
-- **4318** — HTTP OTLP ingestion
+- **4318** — HTTP OTLP ingestion + JSON query API (`/api/*`)
 - **4319** — Query service
 
 ## Persistence
@@ -351,6 +351,32 @@ motel export traces -o proto > traces.binpb   # binary protobuf (length-delimite
 ```
 
 Supported formats: `text`, `jsonl`, `csv`, `proto`. Default is `jsonl`.
+
+## HTTP/JSON Query API
+
+Query motel via HTTP (served on the same port as OTLP HTTP, default 4318):
+
+```bash
+# Query traces
+curl http://localhost:4318/api/traces?service=myapp&since=5m
+
+# Query logs
+curl http://localhost:4318/api/logs?severity=ERROR&limit=50
+
+# Query metrics
+curl http://localhost:4318/api/metrics?name=http.request.duration
+
+# SQL query
+curl -X POST http://localhost:4318/api/sql \
+  -H 'Content-Type: application/json' \
+  -d '{"query": "SELECT * FROM traces LIMIT 10"}'
+
+# Server status
+curl http://localhost:4318/api/status
+
+# Clear data
+curl -X POST http://localhost:4318/api/clear/all
+```
 
 ## Other Commands
 
