@@ -1,6 +1,7 @@
 pub mod cli;
 pub mod client;
 pub mod install;
+pub mod persist;
 pub mod query;
 pub mod server;
 pub mod store;

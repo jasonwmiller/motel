@@ -10,12 +10,13 @@ use tonic::transport::Server;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
 
-use crate::cli::ServerArgs;
+use crate::cli::{PersistFormat, ServerArgs};
 use crate::otel::collector::{
     logs::v1::logs_service_server::LogsServiceServer,
     metrics::v1::metrics_service_server::MetricsServiceServer,
     trace::v1::trace_service_server::TraceServiceServer,
 };
+use crate::persist::SharedPersistBackend;
 use crate::query_proto::query_service_server::QueryServiceServer;
 use crate::store::Store;
 
@@ -25,9 +26,57 @@ pub async fn run(args: ServerArgs) -> anyhow::Result<()> {
     // Set up tracing subscriber
     init_tracing(&args)?;
 
-    // Create shared store
-    let (store, _event_rx) =
-        Store::new_shared(args.max_traces as usize, args.max_logs as usize, args.max_metrics as usize);
+    // Initialize persistence if configured
+    let persist: Option<SharedPersistBackend> = if let Some(ref path) = args.persist {
+        let backend: SharedPersistBackend = match args.persist_format {
+            PersistFormat::Sqlite => {
+                std::sync::Arc::new(crate::persist::sqlite::SqlitePersist::open(path)?)
+            }
+            PersistFormat::Parquet => {
+                std::sync::Arc::new(crate::persist::parquet::ParquetPersist::open(path)?)
+            }
+        };
+        tracing::info!(
+            "Persistence enabled: {} (format: {:?})",
+            path,
+            args.persist_format
+        );
+        Some(backend)
+    } else {
+        None
+    };
+
+    // Create shared store with optional persistence backend
+    let (store, _event_rx) = Store::new_shared_with_persist(
+        args.max_traces as usize,
+        args.max_logs as usize,
+        args.max_metrics as usize,
+        persist.clone(),
+    );
+
+    // Load persisted data on startup
+    if let Some(ref backend) = persist {
+        tracing::info!("Loading persisted data...");
+        let mut s = store.write().await;
+
+        let traces = backend.load_traces().await?;
+        if !traces.is_empty() {
+            tracing::info!("Loaded {} persisted trace batches", traces.len());
+            s.insert_traces_no_persist(traces);
+        }
+
+        let logs = backend.load_logs().await?;
+        if !logs.is_empty() {
+            tracing::info!("Loaded {} persisted log batches", logs.len());
+            s.insert_logs_no_persist(logs);
+        }
+
+        let metrics = backend.load_metrics().await?;
+        if !metrics.is_empty() {
+            tracing::info!("Loaded {} persisted metric batches", metrics.len());
+            s.insert_metrics_no_persist(metrics);
+        }
+    }
 
     // Get the broadcast sender for event subscriptions
     let event_tx = store.read().await.event_tx.clone();

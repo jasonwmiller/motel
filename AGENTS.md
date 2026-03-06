@@ -17,6 +17,8 @@ cargo clippy                         # Lint
 cargo fmt                            # Format
 cargo run -- server                  # Start OTLP server with TUI (gRPC:4317, HTTP:4318, Query:4319)
 cargo run -- server --no-tui         # Start headless server
+cargo run -- server --persist /tmp/motel.db  # Start with SQLite persistence
+cargo run -- server --persist ./data/ --persist-format parquet  # Parquet persistence
 cargo run -- view                    # Attach TUI to a running server (default: localhost:4319)
 cargo run -- view --addr http://h1:4319 --addr http://h2:4319  # Multi-server aggregated view
 cargo run -- traces                  # Query traces
@@ -46,7 +48,11 @@ cargo run -- skill-install --global  # Install skill globally
 
 **Core data flow**: OTLP ingestion (gRPC/HTTP) → `Store` (in-memory, `Arc<RwLock>`) → Query API (gRPC) / TUI (broadcast channels)
 
-- **`src/store.rs`** — Central in-memory store (`SharedStore = Arc<RwLock<Store>>`). All signal types use `VecDeque` with FIFO eviction. Traces are evicted by `trace_id` when `max_traces` is exceeded.
+- **`src/store.rs`** — Central in-memory store (`SharedStore = Arc<RwLock<Store>>`). All signal types use `VecDeque` with FIFO eviction. Traces are evicted by `trace_id` when `max_traces` is exceeded. Supports optional write-through persistence via `SharedPersistBackend`.
+- **`src/persist/`** — Optional persistence backends:
+  - `mod.rs` — `PersistBackend` trait and `SharedPersistBackend` type alias.
+  - `sqlite.rs` — SQLite backend: stores each `Resource*` item as a protobuf-encoded BLOB. Uses WAL mode and `synchronous=NORMAL` for performance.
+  - `parquet.rs` — Parquet backend: stores protobuf-encoded BLOBs in Parquet files (one per signal type). Buffers writes in memory and flushes to disk on each insert.
 - **`src/server/`** — Three listeners: `otlp_grpc.rs` (standard OTLP TraceService/LogsService/MetricsService), `otlp_http.rs` (Axum `/v1/traces`, `/v1/logs`, `/v1/metrics`), `query_grpc.rs` (custom QueryService with streaming follow support and SQL query execution).
 - **`src/client/`** — CLI query commands. Each submodule (trace, log, metrics, sql, clear) builds gRPC requests and formats output (Text/JSONL/CSV). `view.rs` queries all existing data on connect, then subscribes to Follow streams for new data, piping both into a local Store to drive the TUI. `import.rs` reads files (JSONL or OTLP protobuf) and sends data to a server via standard OTLP gRPC clients. `mod.rs` contains shared utilities.
 - **`src/client/`** — CLI query commands. Each submodule (trace, log, metrics, sql, clear) builds gRPC requests and formats output (Text/JSONL/CSV). `view.rs` supports connecting to multiple servers simultaneously (`--addr` can be specified multiple times), merging all data into a single local Store to drive the TUI. Each item is tagged with a `motel.source` resource attribute identifying its origin server. `mod.rs` contains shared utilities.
