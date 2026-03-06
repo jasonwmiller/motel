@@ -244,6 +244,46 @@ pub async fn run(args: ResolvedServerArgs) -> anyhow::Result<()> {
         None
     };
 
+    // Spawn background age-based eviction task if --max-age is set
+    let _eviction_handle = if let Some(max_age) = args.max_age {
+        let eviction_store = store.clone();
+        // Sweep interval: 1/10th of max_age, clamped to [1s, 60s]
+        let interval_secs = (max_age.as_secs() / 10).clamp(1, 60);
+        let interval = std::time::Duration::from_secs(interval_secs);
+        tracing::info!(
+            "Age-based eviction enabled: max_age={:?}, sweep_interval={:?}",
+            max_age,
+            interval
+        );
+        Some(tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(interval);
+            ticker.tick().await; // skip first immediate tick
+            loop {
+                ticker.tick().await;
+                let cutoff_ns = {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default();
+                    now.saturating_sub(max_age).as_nanos() as u64
+                };
+                let mut store = eviction_store.write().await;
+                let traces = store.evict_traces_by_age(cutoff_ns);
+                let logs = store.evict_logs_by_age(cutoff_ns);
+                let metrics = store.evict_metrics_by_age(cutoff_ns);
+                if traces > 0 || logs > 0 || metrics > 0 {
+                    tracing::debug!(
+                        "Age eviction: removed {} trace batches, {} log batches, {} metric batches",
+                        traces,
+                        logs,
+                        metrics
+                    );
+                }
+            }
+        }))
+    } else {
+        None
+    };
+
     tracing::info!(
         "motel server started: gRPC={}, HTTP={}, Query={}{}{}",
         args.grpc_addr,

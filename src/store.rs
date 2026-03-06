@@ -398,6 +398,118 @@ impl Store {
     pub fn trace_count(&self) -> usize {
         self.trace_id_set.len()
     }
+
+    /// Remove traces with all spans older than `cutoff_ns` (nanoseconds since epoch).
+    /// Returns the number of ResourceSpans entries removed.
+    #[tracing::instrument(skip_all)]
+    pub fn evict_traces_by_age(&mut self, cutoff_ns: u64) -> usize {
+        let before = self.traces.len();
+        // Remove spans older than cutoff from each ResourceSpans
+        for rs in self.traces.iter_mut() {
+            for ss in rs.scope_spans.iter_mut() {
+                ss.spans.retain(|s| s.end_time_unix_nano >= cutoff_ns);
+            }
+            rs.scope_spans.retain(|ss| !ss.spans.is_empty());
+        }
+        self.traces.retain(|rs| !rs.scope_spans.is_empty());
+
+        // Rebuild trace_id tracking
+        self.trace_id_set.clear();
+        self.trace_id_order.clear();
+        for rs in &self.traces {
+            for ss in &rs.scope_spans {
+                for span in &ss.spans {
+                    if self.trace_id_set.insert(span.trace_id.clone()) {
+                        self.trace_id_order.push_back(span.trace_id.clone());
+                    }
+                }
+            }
+        }
+
+        let removed = before - self.traces.len();
+        if removed > 0 {
+            let _ = self.event_tx.send(StoreEvent::TracesCleared);
+        }
+        removed
+    }
+
+    /// Remove logs older than `cutoff_ns`. Returns number of ResourceLogs entries removed.
+    #[tracing::instrument(skip_all)]
+    pub fn evict_logs_by_age(&mut self, cutoff_ns: u64) -> usize {
+        let before = self.logs.len();
+        for rl in self.logs.iter_mut() {
+            for sl in rl.scope_logs.iter_mut() {
+                sl.log_records.retain(|lr| {
+                    let ts = if lr.time_unix_nano > 0 {
+                        lr.time_unix_nano
+                    } else {
+                        lr.observed_time_unix_nano
+                    };
+                    ts >= cutoff_ns
+                });
+            }
+            rl.scope_logs.retain(|sl| !sl.log_records.is_empty());
+        }
+        self.logs.retain(|rl| !rl.scope_logs.is_empty());
+        let removed = before - self.logs.len();
+        if removed > 0 {
+            let _ = self.event_tx.send(StoreEvent::LogsCleared);
+        }
+        removed
+    }
+
+    /// Remove metrics older than `cutoff_ns`. Returns number of ResourceMetrics entries removed.
+    #[tracing::instrument(skip_all)]
+    pub fn evict_metrics_by_age(&mut self, cutoff_ns: u64) -> usize {
+        use crate::otel::metrics::v1::metric;
+
+        let before = self.metrics.len();
+        for rm in self.metrics.iter_mut() {
+            for sm in rm.scope_metrics.iter_mut() {
+                for m in sm.metrics.iter_mut() {
+                    match &mut m.data {
+                        Some(metric::Data::Gauge(g)) => {
+                            g.data_points.retain(|dp| dp.time_unix_nano >= cutoff_ns);
+                        }
+                        Some(metric::Data::Sum(s)) => {
+                            s.data_points.retain(|dp| dp.time_unix_nano >= cutoff_ns);
+                        }
+                        Some(metric::Data::Histogram(h)) => {
+                            h.data_points.retain(|dp| dp.time_unix_nano >= cutoff_ns);
+                        }
+                        Some(metric::Data::ExponentialHistogram(h)) => {
+                            h.data_points.retain(|dp| dp.time_unix_nano >= cutoff_ns);
+                        }
+                        Some(metric::Data::Summary(s)) => {
+                            s.data_points.retain(|dp| dp.time_unix_nano >= cutoff_ns);
+                        }
+                        None => {}
+                    }
+                }
+                sm.metrics.retain(|m| has_metric_data_points(&m.data));
+            }
+            rm.scope_metrics.retain(|sm| !sm.metrics.is_empty());
+        }
+        self.metrics.retain(|rm| !rm.scope_metrics.is_empty());
+        let removed = before - self.metrics.len();
+        if removed > 0 {
+            let _ = self.event_tx.send(StoreEvent::MetricsCleared);
+        }
+        removed
+    }
+}
+
+/// Check whether a metric has any data points remaining.
+fn has_metric_data_points(data: &Option<crate::otel::metrics::v1::metric::Data>) -> bool {
+    use crate::otel::metrics::v1::metric;
+    match data {
+        Some(metric::Data::Gauge(g)) => !g.data_points.is_empty(),
+        Some(metric::Data::Sum(s)) => !s.data_points.is_empty(),
+        Some(metric::Data::Histogram(h)) => !h.data_points.is_empty(),
+        Some(metric::Data::ExponentialHistogram(h)) => !h.data_points.is_empty(),
+        Some(metric::Data::Summary(s)) => !s.data_points.is_empty(),
+        None => false,
+    }
 }
 
 #[cfg(test)]
@@ -610,5 +722,236 @@ pub(crate) mod tests {
         )]);
         assert_eq!(store.trace_count(), 1);
         assert_eq!(store.traces_dropped, 1);
+    }
+
+    pub fn make_resource_spans_with_ts(
+        trace_id: &[u8],
+        span_name: &str,
+        start_ns: u64,
+        end_ns: u64,
+    ) -> ResourceSpans {
+        use crate::otel::common::v1::{AnyValue, any_value::Value};
+        ResourceSpans {
+            resource: Some(Resource {
+                attributes: vec![KeyValue {
+                    key: "service.name".into(),
+                    value: Some(AnyValue {
+                        value: Some(Value::StringValue("test-service".into())),
+                    }),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }),
+            scope_spans: vec![ScopeSpans {
+                scope: None,
+                spans: vec![Span {
+                    trace_id: trace_id.to_vec(),
+                    span_id: vec![1, 2, 3, 4, 5, 6, 7, 8],
+                    parent_span_id: vec![],
+                    name: span_name.to_string(),
+                    kind: 1,
+                    start_time_unix_nano: start_ns,
+                    end_time_unix_nano: end_ns,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
+    fn make_resource_logs_with_ts(body: &str, time_ns: u64) -> crate::otel::logs::v1::ResourceLogs {
+        use crate::otel::common::v1::{AnyValue, any_value::Value};
+        use crate::otel::logs::v1::{LogRecord, ResourceLogs, ScopeLogs};
+        ResourceLogs {
+            resource: Some(Resource {
+                attributes: vec![KeyValue {
+                    key: "service.name".into(),
+                    value: Some(AnyValue {
+                        value: Some(Value::StringValue("test-service".into())),
+                    }),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }),
+            scope_logs: vec![ScopeLogs {
+                scope: None,
+                log_records: vec![LogRecord {
+                    time_unix_nano: time_ns,
+                    observed_time_unix_nano: time_ns,
+                    severity_number: 9,
+                    severity_text: "INFO".into(),
+                    body: Some(AnyValue {
+                        value: Some(Value::StringValue(body.to_string())),
+                    }),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
+    fn make_resource_metrics_with_ts(
+        name: &str,
+        value: f64,
+        time_ns: u64,
+    ) -> crate::otel::metrics::v1::ResourceMetrics {
+        use crate::otel::common::v1::{AnyValue, any_value::Value};
+        use crate::otel::metrics::v1::{
+            Gauge, Metric, NumberDataPoint, ResourceMetrics, ScopeMetrics, number_data_point,
+        };
+        ResourceMetrics {
+            resource: Some(Resource {
+                attributes: vec![KeyValue {
+                    key: "service.name".into(),
+                    value: Some(AnyValue {
+                        value: Some(Value::StringValue("test-service".into())),
+                    }),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }),
+            scope_metrics: vec![ScopeMetrics {
+                scope: None,
+                metrics: vec![Metric {
+                    name: name.to_string(),
+                    description: "test metric".to_string(),
+                    unit: "1".to_string(),
+                    data: Some(crate::otel::metrics::v1::metric::Data::Gauge(Gauge {
+                        data_points: vec![NumberDataPoint {
+                            time_unix_nano: time_ns,
+                            start_time_unix_nano: 0,
+                            value: Some(number_data_point::Value::AsDouble(value)),
+                            ..Default::default()
+                        }],
+                    })),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_evict_traces_by_age() {
+        let (mut store, _rx) = Store::new(100, 100, 100);
+        // Old trace (end_time = 1_000_000_000)
+        store.insert_traces(vec![make_resource_spans_with_ts(
+            &[1; 16],
+            "old-span",
+            500_000_000,
+            1_000_000_000,
+        )]);
+        // Recent trace (end_time = 5_000_000_000)
+        store.insert_traces(vec![make_resource_spans_with_ts(
+            &[2; 16],
+            "new-span",
+            4_000_000_000,
+            5_000_000_000,
+        )]);
+        assert_eq!(store.trace_count(), 2);
+
+        // Evict traces older than cutoff=2_000_000_000
+        let removed = store.evict_traces_by_age(2_000_000_000);
+        assert_eq!(removed, 1);
+        assert_eq!(store.trace_count(), 1);
+        assert_eq!(store.span_count(), 1);
+        // Old trace should be gone
+        assert!(!store.trace_id_set.contains(&vec![1u8; 16]));
+        // New trace should remain
+        assert!(store.trace_id_set.contains(&vec![2u8; 16]));
+    }
+
+    #[test]
+    fn test_evict_traces_rebuilds_tracking() {
+        let (mut store, _rx) = Store::new(100, 100, 100);
+        store.insert_traces(vec![make_resource_spans_with_ts(
+            &[1; 16], "span-a", 100, 200,
+        )]);
+        store.insert_traces(vec![make_resource_spans_with_ts(
+            &[2; 16], "span-b", 300, 400,
+        )]);
+        store.insert_traces(vec![make_resource_spans_with_ts(
+            &[3; 16], "span-c", 500, 600,
+        )]);
+
+        // Evict first two traces
+        store.evict_traces_by_age(500);
+        assert_eq!(store.trace_count(), 1);
+        assert_eq!(store.trace_id_order.len(), 1);
+        assert_eq!(store.trace_id_set.len(), 1);
+        assert!(store.trace_id_set.contains(&vec![3u8; 16]));
+    }
+
+    #[test]
+    fn test_evict_logs_by_age() {
+        let (mut store, _rx) = Store::new(100, 100, 100);
+        store.insert_logs(vec![make_resource_logs_with_ts("old log", 1_000_000_000)]);
+        store.insert_logs(vec![make_resource_logs_with_ts("new log", 5_000_000_000)]);
+        assert_eq!(store.log_count(), 2);
+
+        let removed = store.evict_logs_by_age(2_000_000_000);
+        assert_eq!(removed, 1);
+        assert_eq!(store.log_count(), 1);
+    }
+
+    #[test]
+    fn test_evict_metrics_by_age() {
+        let (mut store, _rx) = Store::new(100, 100, 100);
+        store.insert_metrics(vec![make_resource_metrics_with_ts(
+            "old_metric",
+            1.0,
+            1_000_000_000,
+        )]);
+        store.insert_metrics(vec![make_resource_metrics_with_ts(
+            "new_metric",
+            2.0,
+            5_000_000_000,
+        )]);
+        assert_eq!(store.metric_count(), 2);
+
+        let removed = store.evict_metrics_by_age(2_000_000_000);
+        assert_eq!(removed, 1);
+        assert_eq!(store.metric_count(), 1);
+    }
+
+    #[test]
+    fn test_evict_no_items_removed() {
+        let (mut store, _rx) = Store::new(100, 100, 100);
+        store.insert_traces(vec![make_resource_spans_with_ts(
+            &[1; 16],
+            "span",
+            5_000_000_000,
+            6_000_000_000,
+        )]);
+        // Cutoff is before all data
+        let removed = store.evict_traces_by_age(1_000_000_000);
+        assert_eq!(removed, 0);
+        assert_eq!(store.trace_count(), 1);
+    }
+
+    #[test]
+    fn test_count_and_age_eviction_coexist() {
+        // max_traces=2, insert 3 traces, then age-evict
+        let (mut store, _rx) = Store::new(2, 100, 100);
+        store.insert_traces(vec![make_resource_spans_with_ts(
+            &[1; 16], "span1", 100, 200,
+        )]);
+        store.insert_traces(vec![make_resource_spans_with_ts(
+            &[2; 16], "span2", 300, 400,
+        )]);
+        store.insert_traces(vec![make_resource_spans_with_ts(
+            &[3; 16], "span3", 500, 600,
+        )]);
+        // Count eviction should have kept only 2 traces (trace 2 and 3)
+        assert_eq!(store.trace_count(), 2);
+
+        // Now age-evict trace 2 (end_time=400, cutoff=450)
+        let removed = store.evict_traces_by_age(450);
+        assert_eq!(removed, 1);
+        assert_eq!(store.trace_count(), 1);
+        assert!(store.trace_id_set.contains(&vec![3u8; 16]));
     }
 }
