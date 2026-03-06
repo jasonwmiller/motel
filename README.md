@@ -54,6 +54,20 @@ Default ports:
 - **4318** — HTTP OTLP ingestion
 - **4319** — Query service
 
+## Persistence
+
+By default motel stores everything in memory. Use `--persist` to write data to disk so it survives server restarts:
+
+```bash
+# SQLite (default format) — single file, simple
+motel server --persist /tmp/motel.db
+
+# Parquet — directory of .parquet files
+motel server --persist ./motel-data/ --persist-format parquet
+```
+
+The in-memory store remains the primary data path; persistence is write-through. On startup, persisted data is reloaded automatically. FIFO eviction in memory does not affect persisted data (disk retains full history). `motel clear` clears both in-memory and persisted data.
+
 ## Query
 
 ```bash

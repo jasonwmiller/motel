@@ -3,6 +3,7 @@ use std::sync::Arc;
 use tokio::sync::{RwLock, broadcast};
 
 use crate::otel::{logs::v1::ResourceLogs, metrics::v1::ResourceMetrics, trace::v1::ResourceSpans};
+use crate::persist::SharedPersistBackend;
 
 pub type SharedStore = Arc<RwLock<Store>>;
 
@@ -30,6 +31,9 @@ pub struct Store {
     pub max_metrics: usize,
 
     pub event_tx: broadcast::Sender<StoreEvent>,
+
+    /// Optional persistence backend (write-through on insert, clear on clear).
+    pub persist: Option<SharedPersistBackend>,
 }
 
 impl Store {
@@ -37,6 +41,15 @@ impl Store {
         max_traces: usize,
         max_logs: usize,
         max_metrics: usize,
+    ) -> (Self, broadcast::Receiver<StoreEvent>) {
+        Self::new_with_persist(max_traces, max_logs, max_metrics, None)
+    }
+
+    pub fn new_with_persist(
+        max_traces: usize,
+        max_logs: usize,
+        max_metrics: usize,
+        persist: Option<SharedPersistBackend>,
     ) -> (Self, broadcast::Receiver<StoreEvent>) {
         let (event_tx, event_rx) = broadcast::channel(1024);
         let store = Self {
@@ -49,6 +62,7 @@ impl Store {
             max_logs,
             max_metrics,
             event_tx,
+            persist,
         };
         (store, event_rx)
     }
@@ -58,12 +72,37 @@ impl Store {
         max_logs: usize,
         max_metrics: usize,
     ) -> (SharedStore, broadcast::Receiver<StoreEvent>) {
-        let (store, rx) = Self::new(max_traces, max_logs, max_metrics);
+        Self::new_shared_with_persist(max_traces, max_logs, max_metrics, None)
+    }
+
+    pub fn new_shared_with_persist(
+        max_traces: usize,
+        max_logs: usize,
+        max_metrics: usize,
+        persist: Option<SharedPersistBackend>,
+    ) -> (SharedStore, broadcast::Receiver<StoreEvent>) {
+        let (store, rx) = Self::new_with_persist(max_traces, max_logs, max_metrics, persist);
         (Arc::new(RwLock::new(store)), rx)
     }
 
     #[tracing::instrument(skip_all, fields(count = resource_spans.len()))]
     pub fn insert_traces(&mut self, resource_spans: Vec<ResourceSpans>) {
+        // Write-through to persistence (spawned as background task)
+        if let Some(ref persist) = self.persist {
+            let persist = persist.clone();
+            let data = resource_spans.clone();
+            tokio::spawn(async move {
+                if let Err(e) = persist.write_traces(&data).await {
+                    tracing::warn!("persistence write_traces failed: {e}");
+                }
+            });
+        }
+
+        self.insert_traces_no_persist(resource_spans);
+    }
+
+    /// Insert traces without writing to persistence (used during startup load).
+    pub fn insert_traces_no_persist(&mut self, resource_spans: Vec<ResourceSpans>) {
         for rs in &resource_spans {
             // Extract unique trace IDs from this ResourceSpans
             for scope_spans in &rs.scope_spans {
@@ -98,6 +137,22 @@ impl Store {
 
     #[tracing::instrument(skip_all, fields(count = resource_logs.len()))]
     pub fn insert_logs(&mut self, resource_logs: Vec<ResourceLogs>) {
+        // Write-through to persistence
+        if let Some(ref persist) = self.persist {
+            let persist = persist.clone();
+            let data = resource_logs.clone();
+            tokio::spawn(async move {
+                if let Err(e) = persist.write_logs(&data).await {
+                    tracing::warn!("persistence write_logs failed: {e}");
+                }
+            });
+        }
+
+        self.insert_logs_no_persist(resource_logs);
+    }
+
+    /// Insert logs without writing to persistence (used during startup load).
+    pub fn insert_logs_no_persist(&mut self, resource_logs: Vec<ResourceLogs>) {
         let event = StoreEvent::LogsInserted(resource_logs.clone());
         self.logs.extend(resource_logs);
         while self.logs.len() > self.max_logs {
@@ -108,6 +163,22 @@ impl Store {
 
     #[tracing::instrument(skip_all, fields(count = resource_metrics.len()))]
     pub fn insert_metrics(&mut self, resource_metrics: Vec<ResourceMetrics>) {
+        // Write-through to persistence
+        if let Some(ref persist) = self.persist {
+            let persist = persist.clone();
+            let data = resource_metrics.clone();
+            tokio::spawn(async move {
+                if let Err(e) = persist.write_metrics(&data).await {
+                    tracing::warn!("persistence write_metrics failed: {e}");
+                }
+            });
+        }
+
+        self.insert_metrics_no_persist(resource_metrics);
+    }
+
+    /// Insert metrics without writing to persistence (used during startup load).
+    pub fn insert_metrics_no_persist(&mut self, resource_metrics: Vec<ResourceMetrics>) {
         let event = StoreEvent::MetricsInserted(resource_metrics.clone());
         self.metrics.extend(resource_metrics);
         while self.metrics.len() > self.max_metrics {
@@ -118,6 +189,14 @@ impl Store {
 
     #[tracing::instrument(skip_all)]
     pub fn clear_traces(&mut self) -> usize {
+        if let Some(ref persist) = self.persist {
+            let persist = persist.clone();
+            tokio::spawn(async move {
+                if let Err(e) = persist.clear_traces().await {
+                    tracing::warn!("persistence clear_traces failed: {e}");
+                }
+            });
+        }
         let count = self.traces.len();
         self.traces.clear();
         self.trace_id_order.clear();
@@ -128,6 +207,14 @@ impl Store {
 
     #[tracing::instrument(skip_all)]
     pub fn clear_logs(&mut self) -> usize {
+        if let Some(ref persist) = self.persist {
+            let persist = persist.clone();
+            tokio::spawn(async move {
+                if let Err(e) = persist.clear_logs().await {
+                    tracing::warn!("persistence clear_logs failed: {e}");
+                }
+            });
+        }
         let count = self.logs.len();
         self.logs.clear();
         let _ = self.event_tx.send(StoreEvent::LogsCleared);
@@ -136,6 +223,14 @@ impl Store {
 
     #[tracing::instrument(skip_all)]
     pub fn clear_metrics(&mut self) -> usize {
+        if let Some(ref persist) = self.persist {
+            let persist = persist.clone();
+            tokio::spawn(async move {
+                if let Err(e) = persist.clear_metrics().await {
+                    tracing::warn!("persistence clear_metrics failed: {e}");
+                }
+            });
+        }
         let count = self.metrics.len();
         self.metrics.clear();
         let _ = self.event_tx.send(StoreEvent::MetricsCleared);

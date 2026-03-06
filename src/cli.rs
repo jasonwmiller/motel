@@ -72,6 +72,12 @@ pub struct ServerArgs {
     /// Maximum number of metric batches to keep
     #[arg(long, default_value = "100000", value_parser = clap::value_parser!(u64).range(1..))]
     pub max_metrics: u64,
+    /// Path for optional data persistence (file for SQLite, directory for Parquet)
+    #[arg(long)]
+    pub persist: Option<String>,
+    /// Persistence format: sqlite (default) or parquet
+    #[arg(long, default_value = "sqlite")]
+    pub persist_format: PersistFormat,
 }
 
 #[derive(clap::Args, Clone)]
@@ -414,6 +420,12 @@ pub enum ExportFormat {
     Jsonl,
     Csv,
     Proto,
+}
+
+#[derive(Clone, Debug, ValueEnum)]
+pub enum PersistFormat {
+    Sqlite,
+    Parquet,
 }
 
 #[derive(Clone, ValueEnum)]

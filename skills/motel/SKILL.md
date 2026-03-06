@@ -18,6 +18,12 @@ motel server
 # Start headless (no TUI)
 motel server --no-tui
 
+# With SQLite persistence (data survives restarts)
+motel server --persist /tmp/motel.db
+
+# With Parquet persistence
+motel server --persist ./data/ --persist-format parquet
+
 # Custom addresses
 motel server --grpc-addr 0.0.0.0:4317 --http-addr 0.0.0.0:4318 --query-addr 0.0.0.0:4319
 ```
