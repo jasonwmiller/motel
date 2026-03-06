@@ -26,6 +26,8 @@ pub enum Command {
     Sql(SqlArgs),
     /// Show service dependency map
     ServiceMap(ServiceMapArgs),
+    /// Export stored data (bulk dump)
+    Export(ExportArgs),
     /// Clear stored data
     Clear(ClearArgs),
     /// Check server status
@@ -304,8 +306,29 @@ pub struct ReplayArgs {
     pub addr: String,
 }
 
+#[derive(clap::Args, Clone)]
+pub struct ExportArgs {
+    /// What to export
+    #[arg(value_enum)]
+    pub target: ExportTarget,
+    /// Output format
+    #[arg(long, short = 'o', default_value = "jsonl")]
+    pub output: ExportFormat,
+    /// Query service address
+    #[arg(long, default_value = "http://localhost:4319")]
+    pub addr: String,
+}
+
 #[derive(Clone, ValueEnum)]
 pub enum ReplaySignal {
+    Traces,
+    Logs,
+    Metrics,
+    All,
+}
+
+#[derive(Clone, ValueEnum)]
+pub enum ExportTarget {
     Traces,
     Logs,
     Metrics,
@@ -348,6 +371,14 @@ pub enum SignalType {
     Traces,
     Logs,
     Metrics,
+}
+
+#[derive(Clone, ValueEnum)]
+pub enum ExportFormat {
+    Text,
+    Jsonl,
+    Csv,
+    Proto,
 }
 
 #[derive(Clone, ValueEnum)]

@@ -300,6 +300,19 @@ motel import data.jsonl --signal logs --addr http://localhost:4317
 ```
 
 Format is auto-detected from file extension (`.jsonl`/`.json`/`.ndjson` for JSONL, `.pb`/`.proto`/`.bin` for protobuf). Signal type is auto-detected from filename (e.g., `traces.jsonl` -> traces, `logs.jsonl` -> logs). Use `--format` and `--signal` to override.
+## Export
+
+Bulk dump stored data for offline analysis or backup:
+
+```bash
+motel export traces -o jsonl > traces.jsonl
+motel export logs -o csv > logs.csv
+motel export metrics -o text
+motel export all -o jsonl > everything.jsonl
+motel export traces -o proto > traces.binpb   # binary protobuf (length-delimited)
+```
+
+Supported formats: `text`, `jsonl`, `csv`, `proto`. Default is `jsonl`.
 
 ## Other Commands
 
