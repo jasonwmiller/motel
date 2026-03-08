@@ -1,4 +1,5 @@
 pub mod alert;
+pub mod anomaly;
 pub mod cli;
 pub mod client;
 pub mod config;

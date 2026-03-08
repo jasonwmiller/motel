@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use anyhow::Result;
 
 use crate::cli::{OutputFormat, ResolvedTracesArgs};
@@ -57,12 +59,20 @@ pub async fn run(args: ResolvedTracesArgs) -> Result<()> {
         }
     }
 
+    // Detect outlier spans for annotation
+    let outlier_ids = detect_outlier_span_ids(&rows);
+
     match args.output {
         OutputFormat::Text => {
             for row in &rows {
+                let slow_tag = if outlier_ids.contains(&row.span_id) {
+                    " [SLOW]"
+                } else {
+                    ""
+                };
                 println!(
-                    "{} {} {} {:.3}ms trace_id={}",
-                    row.time, row.service, row.span_name, row.duration_ms, row.trace_id,
+                    "{} {} {} {:.3}ms trace_id={}{}",
+                    row.time, row.service, row.span_name, row.duration_ms, row.trace_id, slow_tag,
                 );
             }
         }
@@ -169,6 +179,41 @@ fn format_status(status: Option<&crate::otel::trace::v1::Status>) -> String {
         Some(s) => format!("{:?}", s.code()),
         None => "UNSET".into(),
     }
+}
+
+/// Detect outlier spans from CLI trace output rows.
+/// Groups by (service, span_name) and flags spans > mean + 2*stddev.
+fn detect_outlier_span_ids(rows: &[SpanRow]) -> HashSet<String> {
+    use std::collections::HashMap;
+
+    let mut groups: HashMap<(&str, &str), Vec<(usize, f64)>> = HashMap::new();
+    for (i, row) in rows.iter().enumerate() {
+        groups
+            .entry((&row.service, &row.span_name))
+            .or_default()
+            .push((i, row.duration_ms));
+    }
+
+    let mut outlier_ids = HashSet::new();
+    for group in groups.values() {
+        if group.len() < 2 {
+            continue;
+        }
+        let n = group.len() as f64;
+        let mean = group.iter().map(|(_, d)| d).sum::<f64>() / n;
+        let variance = group.iter().map(|(_, d)| (d - mean).powi(2)).sum::<f64>() / n;
+        let stddev = variance.sqrt();
+        if stddev == 0.0 {
+            continue;
+        }
+        let cutoff = mean + crate::anomaly::DEFAULT_STDDEV_THRESHOLD * stddev;
+        for &(i, d) in group {
+            if d > cutoff {
+                outlier_ids.insert(rows[i].span_id.clone());
+            }
+        }
+    }
+    outlier_ids
 }
 
 async fn run_follow(args: ResolvedTracesArgs) -> Result<()> {

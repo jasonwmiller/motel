@@ -1,7 +1,8 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use ratatui::style::Color;
 
+use crate::anomaly;
 use crate::otel::{
     common::v1::{AnyValue, KeyValue, any_value},
     logs::v1::ResourceLogs,
@@ -271,6 +272,9 @@ pub struct App {
     pub filtered_trace_indices: Vec<usize>,
     pub filtered_log_indices: Vec<usize>,
     pub filtered_metric_indices: Vec<usize>,
+
+    // Anomaly detection: set of span_ids flagged as outliers
+    pub outlier_span_ids: HashSet<Vec<u8>>,
 }
 
 impl App {
@@ -303,6 +307,7 @@ impl App {
             filtered_trace_indices: Vec::new(),
             filtered_log_indices: Vec::new(),
             filtered_metric_indices: Vec::new(),
+            outlier_span_ids: HashSet::new(),
         }
     }
 
@@ -649,6 +654,15 @@ impl App {
             self.trace_count = guard.trace_count();
             self.span_count = guard.span_count();
             self.tab_states[Tab::Traces.index()].dirty = false;
+
+            // Recalculate outlier spans across all trace groups
+            let all_group_spans: Vec<&SpanRow> =
+                self.trace_groups.iter().flat_map(|g| &g.spans).collect();
+            // Borrow all spans as a slice for anomaly detection
+            let span_refs: Vec<SpanRow> = all_group_spans.iter().map(|s| (*s).clone()).collect();
+            self.outlier_span_ids =
+                anomaly::detect_outliers(&span_refs, anomaly::DEFAULT_STDDEV_THRESHOLD);
+
 
             // Refresh timeline if viewing one
             if let TraceView::Timeline(ref tid) = self.trace_view

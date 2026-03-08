@@ -239,12 +239,13 @@ fn draw_logs_table(f: &mut Frame, app: &App, area: Rect) {
                 format_timestamp(log.time_nano)
             };
             let svc_color = get_service_color(app, &log.service_name);
-            let mut cells = vec![
-                Cell::from(time_str),
-            ];
+            let mut cells = vec![Cell::from(time_str)];
             if multi {
                 let source = extract_source(&log.resource_attributes).unwrap_or_default();
-                cells.push(Cell::from(truncate(&source, 20)).style(Style::default().fg(Color::Rgb(190, 190, 190))));
+                cells.push(
+                    Cell::from(truncate(&source, 20))
+                        .style(Style::default().fg(Color::Rgb(190, 190, 190))),
+                );
             }
             cells.extend([
                 Cell::from(log.service_name.clone()).style(Style::default().fg(svc_color)),
@@ -411,21 +412,36 @@ fn draw_traces_list(f: &mut Frame, app: &App, area: Rect) {
                 .as_ref()
                 .is_some_and(|m| *m == group.trace_id);
             let mark_indicator = if is_marked { "*" } else { "" };
+            let has_outlier = crate::anomaly::trace_has_outlier(
+                &group
+                    .spans
+                    .iter()
+                    .map(|s| s.span_id.clone())
+                    .collect::<Vec<_>>(),
+                &app.outlier_span_ids,
+            );
+            let outlier_indicator = if has_outlier { "!" } else { "" };
             let tid_display = if is_selected {
-                format!("\u{25b6}{} {}", mark_indicator, tid_short)
+                format!(
+                    "\u{25b6}{}{} {}",
+                    mark_indicator, outlier_indicator, tid_short
+                )
             } else {
-                format!("{}{}", mark_indicator, tid_short)
+                format!("{}{}{}", mark_indicator, outlier_indicator, tid_short)
             };
             let svc_color = get_service_color(app, &group.service_name);
-            let mut cells = vec![
-                Cell::from(tid_display),
-            ];
+            let mut cells = vec![Cell::from(tid_display)];
             if multi {
                 // Extract source from the root span's resource attributes
-                let source = group.spans.first()
+                let source = group
+                    .spans
+                    .first()
                     .and_then(|s| extract_source(&s.resource_attributes))
                     .unwrap_or_default();
-                cells.push(Cell::from(truncate(&source, 20)).style(Style::default().fg(Color::Rgb(190, 190, 190))));
+                cells.push(
+                    Cell::from(truncate(&source, 20))
+                        .style(Style::default().fg(Color::Rgb(190, 190, 190))),
+                );
             }
             cells.extend([
                 Cell::from(group.service_name.clone()).style(Style::default().fg(svc_color)),
@@ -542,16 +558,27 @@ fn draw_timeline_waterfall(f: &mut Frame, app: &App, area: Rect) {
             let bar_len = bar_end.saturating_sub(bar_start).max(1).min(bar_width);
             let bar_start_clamped = bar_start.min(bar_width.saturating_sub(1));
 
-            let svc_color = get_service_color(app, &node.span.span_name);
+            let is_outlier = app.outlier_span_ids.contains(&node.span.span_id);
+            let bar_color = if is_outlier {
+                Color::Rgb(224, 108, 117) // red for outliers
+            } else {
+                get_service_color(app, &node.span.span_name)
+            };
 
             let mut bar_string = " ".repeat(bar_start_clamped);
             bar_string.push_str(&"\u{2588}".repeat(bar_len));
 
             let padded_name = format!("{:<width$}", name_truncated, width = name_width);
 
+            let name_style = if is_outlier {
+                Style::default().fg(Color::Rgb(229, 192, 123)) // yellow name for outliers
+            } else {
+                Style::default()
+            };
+
             let cells = vec![
-                Cell::from(padded_name),
-                Cell::from(Span::styled(bar_string, Style::default().fg(svc_color))),
+                Cell::from(Span::styled(padded_name, name_style)),
+                Cell::from(Span::styled(bar_string, Style::default().fg(bar_color))),
             ];
             Row::new(cells).style(row_style(i, is_selected))
         })
@@ -585,7 +612,20 @@ fn draw_timeline_waterfall(f: &mut Frame, app: &App, area: Rect) {
 fn draw_timeline_detail(f: &mut Frame, app: &App, area: Rect) {
     let selected = app.timeline_selected;
     let lines = if let Some(node) = app.timeline_nodes.get(selected) {
-        span_detail_lines(&node.span)
+        let mut l = span_detail_lines(&node.span);
+        if app.outlier_span_ids.contains(&node.span.span_id) {
+            l.insert(
+                0,
+                Line::from(Span::styled(
+                    "[SLOW] This span is a statistical outlier",
+                    Style::default()
+                        .fg(Color::Rgb(224, 108, 117))
+                        .add_modifier(Modifier::BOLD),
+                )),
+            );
+            l.insert(1, Line::from(""));
+        }
+        l
     } else {
         vec![Line::from("No span selected")]
     };
@@ -649,12 +689,13 @@ fn draw_metrics_table(f: &mut Frame, app: &App, area: Rect) {
                 met.metric_name.clone()
             };
             let svc_color = get_service_color(app, &met.service_name);
-            let mut cells = vec![
-                Cell::from(truncate(&name_str, 40)),
-            ];
+            let mut cells = vec![Cell::from(truncate(&name_str, 40))];
             if multi {
                 let source = extract_source(&met.resource_attributes).unwrap_or_default();
-                cells.push(Cell::from(truncate(&source, 20)).style(Style::default().fg(Color::Rgb(190, 190, 190))));
+                cells.push(
+                    Cell::from(truncate(&source, 20))
+                        .style(Style::default().fg(Color::Rgb(190, 190, 190))),
+                );
             }
             cells.extend([
                 Cell::from(met.service_name.clone()).style(Style::default().fg(svc_color)),
