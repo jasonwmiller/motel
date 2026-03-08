@@ -650,6 +650,18 @@ impl App {
         self.apply_filter();
     }
 
+    /// Get the trace_id of the currently selected trace (in list view).
+    pub fn get_selected_trace_id(&self) -> Option<Vec<u8>> {
+        if self.current_tab != Tab::Traces || self.trace_view != TraceView::List {
+            return None;
+        }
+        let selected = self.tab_states[Tab::Traces.index()].selected;
+        self.filtered_trace_indices
+            .get(selected)
+            .and_then(|&i| self.trace_groups.get(i))
+            .map(|g| g.trace_id.clone())
+    }
+
     pub async fn refresh_from_store(&mut self, store: &SharedStore) {
         let guard = store.read().await;
 
@@ -668,6 +680,14 @@ impl App {
             self.outlier_span_ids =
                 anomaly::detect_outliers(&span_refs, anomaly::DEFAULT_STDDEV_THRESHOLD);
 
+            if self.follow_mode && !self.trace_groups.is_empty() {
+                // Will be clamped by apply_filter below
+            } else if !self.trace_groups.is_empty() {
+                let ts = &mut self.tab_states[Tab::Traces.index()];
+                ts.selected = ts.selected.min(self.trace_groups.len() - 1);
+            } else {
+                self.tab_states[Tab::Traces.index()].selected = 0;
+            }
 
             // Refresh timeline if viewing one
             if let TraceView::Timeline(ref tid) = self.trace_view
@@ -704,6 +724,20 @@ impl App {
             if !self.filtered_log_indices.is_empty() {
                 self.tab_states[Tab::Logs.index()].selected =
                     self.filtered_log_indices.len() - 1;
+            }
+        }
+
+        // Rebuild filtered indices after data refresh
+        self.apply_filter();
+
+        // In follow mode, jump to end of filtered results
+        if self.follow_mode {
+            if !self.filtered_trace_indices.is_empty() {
+                self.tab_states[Tab::Traces.index()].selected =
+                    self.filtered_trace_indices.len() - 1;
+            }
+            if !self.filtered_log_indices.is_empty() {
+                self.tab_states[Tab::Logs.index()].selected = self.filtered_log_indices.len() - 1;
             }
         }
     }
@@ -1077,19 +1111,39 @@ mod tests {
 
     fn make_test_app_with_traces() -> App {
         let mut app = App::new();
-        app.trace_groups = vec![TraceGroup {
-            trace_id: vec![1u8; 16],
-            service_name: "test-svc".to_string(),
-            root_span_name: "root".to_string(),
+        app.trace_groups = vec![make_trace("test-svc", "root", vec![1u8; 16])];
+        app
+    }
+
+    fn make_log(service: &str, body: &str, severity: &str) -> LogRow {
+        LogRow {
+            time_nano: 1_000_000_000,
+            service_name: service.to_string(),
+            severity_text: severity.to_string(),
+            severity_number: 9,
+            body: body.to_string(),
+            trace_id: vec![],
+            span_id: vec![],
+            scope_name: String::new(),
+            attributes: vec![],
+            resource_attributes: vec![],
+        }
+    }
+
+    fn make_trace(service: &str, span_name: &str, trace_id: Vec<u8>) -> TraceGroup {
+        TraceGroup {
+            trace_id: trace_id.clone(),
+            service_name: service.to_string(),
+            root_span_name: span_name.to_string(),
             span_count: 1,
             duration_ns: 1_000_000,
             start_time_nano: 1_000_000_000,
             spans: vec![SpanRow {
                 time_nano: 1_000_000_000,
-                service_name: "test-svc".to_string(),
-                span_name: "root".to_string(),
+                service_name: service.to_string(),
+                span_name: span_name.to_string(),
                 duration_ns: 1_000_000,
-                trace_id: vec![1u8; 16],
+                trace_id,
                 span_id: vec![1, 2, 3, 4, 5, 6, 7, 8],
                 parent_span_id: vec![],
                 kind: 1,
@@ -1100,8 +1154,19 @@ mod tests {
                 events_count: 0,
                 links_count: 0,
             }],
-        }];
-        app
+        }
+    }
+
+    fn make_metric(name: &str, service: &str) -> AggregatedMetric {
+        AggregatedMetric {
+            metric_name: name.to_string(),
+            metric_type: "gauge".to_string(),
+            service_name: service.to_string(),
+            unit: String::new(),
+            description: String::new(),
+            data_points: vec![],
+            resource_attributes: vec![],
+        }
     }
 
     #[test]
@@ -1129,5 +1194,133 @@ mod tests {
         app.current_tab = Tab::Logs;
         assert!(!app.navigate_to_trace(&[]));
         assert_eq!(app.current_tab, Tab::Logs);
+    }
+
+    #[test]
+    fn test_apply_filter_empty() {
+        let mut app = App::new();
+        app.log_rows = vec![
+            make_log("auth-svc", "hello", "INFO"),
+            make_log("api-gw", "world", "ERROR"),
+        ];
+        app.trace_groups = vec![make_trace("auth-svc", "GET /users", vec![1; 16])];
+        app.aggregated_metrics = vec![make_metric("http.duration", "api-gw")];
+
+        app.apply_filter();
+
+        assert_eq!(app.filtered_log_indices, vec![0, 1]);
+        assert_eq!(app.filtered_trace_indices, vec![0]);
+        assert_eq!(app.filtered_metric_indices, vec![0]);
+    }
+
+    #[test]
+    fn test_apply_filter_logs_by_body() {
+        let mut app = App::new();
+        app.log_rows = vec![
+            make_log("svc", "hello world", "INFO"),
+            make_log("svc", "error occurred", "ERROR"),
+        ];
+        app.filter_text = "error".to_string();
+        app.apply_filter();
+
+        assert_eq!(app.filtered_log_indices, vec![1]);
+    }
+
+    #[test]
+    fn test_apply_filter_logs_by_service() {
+        let mut app = App::new();
+        app.log_rows = vec![
+            make_log("auth-svc", "msg1", "INFO"),
+            make_log("api-gw", "msg2", "INFO"),
+            make_log("auth-svc", "msg3", "WARN"),
+        ];
+        app.filter_text = "auth".to_string();
+        app.apply_filter();
+
+        assert_eq!(app.filtered_log_indices, vec![0, 2]);
+    }
+
+    #[test]
+    fn test_apply_filter_traces_by_service() {
+        let mut app = App::new();
+        app.trace_groups = vec![
+            make_trace("auth-svc", "validate", vec![1; 16]),
+            make_trace("api-gw", "route", vec![2; 16]),
+            make_trace("auth-svc", "login", vec![3; 16]),
+        ];
+        app.filter_text = "auth".to_string();
+        app.apply_filter();
+
+        assert_eq!(app.filtered_trace_indices, vec![0, 2]);
+    }
+
+    #[test]
+    fn test_apply_filter_metrics_by_name() {
+        let mut app = App::new();
+        app.aggregated_metrics = vec![
+            make_metric("http.duration", "api"),
+            make_metric("cpu.usage", "api"),
+            make_metric("http.requests", "api"),
+        ];
+        app.filter_text = "http".to_string();
+        app.apply_filter();
+
+        assert_eq!(app.filtered_metric_indices, vec![0, 2]);
+    }
+
+    #[test]
+    fn test_apply_filter_case_insensitive() {
+        let mut app = App::new();
+        app.log_rows = vec![make_log("svc", "FAILED request", "ERROR")];
+
+        app.filter_text = "failed".to_string();
+        app.apply_filter();
+        assert_eq!(app.filtered_log_indices, vec![0]);
+
+        app.filter_text = "FAILED".to_string();
+        app.apply_filter();
+        assert_eq!(app.filtered_log_indices, vec![0]);
+    }
+
+    #[test]
+    fn test_clear_filter() {
+        let mut app = App::new();
+        app.log_rows = vec![
+            make_log("svc", "hello", "INFO"),
+            make_log("svc", "error", "ERROR"),
+        ];
+        app.filter_text = "error".to_string();
+        app.filter_cursor = 5;
+        app.input_mode = InputMode::Filter;
+        app.apply_filter();
+        assert_eq!(app.filtered_log_indices.len(), 1);
+
+        app.clear_filter();
+        assert_eq!(app.input_mode, InputMode::Normal);
+        assert!(app.filter_text.is_empty());
+        assert_eq!(app.filter_cursor, 0);
+        assert_eq!(app.filtered_log_indices, vec![0, 1]);
+    }
+
+    #[test]
+    fn test_filter_clamps_selection() {
+        let mut app = App::new();
+        app.log_rows = vec![
+            make_log("svc", "hello", "INFO"),
+            make_log("svc", "world", "INFO"),
+            make_log("svc", "error", "ERROR"),
+        ];
+        app.apply_filter();
+
+        // Select last item
+        app.tab_states[Tab::Logs.index()].selected = 2;
+
+        // Filter to just one item
+        app.filter_text = "error".to_string();
+        app.apply_filter();
+
+        // Selection should be clamped
+        assert_eq!(app.filtered_log_indices.len(), 1);
+        assert_eq!(app.tab_states[Tab::Logs.index()].selected, 0);
     }
 }

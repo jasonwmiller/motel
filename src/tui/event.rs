@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use crate::store::StoreEvent;
 
-use super::app::{App, Tab, TraceView};
+use super::app::{App, InputMode, Tab, TraceView};
 
 /// Possible outcomes from handling an event.
 pub enum EventResult {
@@ -28,6 +28,11 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> EventResult {
     // Ctrl-C always quits
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
         return EventResult::Quit;
+    }
+
+    // Handle filter input mode
+    if app.input_mode == InputMode::Filter {
+        return handle_filter_key(app, key);
     }
 
     // When in timeline or diff view, intercept q and Esc to go back instead of quit
@@ -56,8 +61,21 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> EventResult {
     }
 
     match key.code {
-        KeyCode::Char('q') | KeyCode::Esc => {
+        // Esc: if filter is active, clear it; otherwise quit
+        KeyCode::Esc => {
+            if !app.filter_text.is_empty() {
+                app.clear_filter();
+            } else {
+                return EventResult::Quit;
+            }
+        }
+
+        KeyCode::Char('q') => {
             return EventResult::Quit;
+        }
+
+        KeyCode::Char('/') => {
+            app.input_mode = InputMode::Filter;
         }
 
         KeyCode::Tab => {
@@ -134,6 +152,44 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> EventResult {
         _ => {}
     }
 
+    EventResult::Continue
+}
+
+fn handle_filter_key(app: &mut App, key: KeyEvent) -> EventResult {
+    match key.code {
+        KeyCode::Esc => {
+            app.clear_filter();
+        }
+        KeyCode::Enter => {
+            // Keep filter active, return to normal mode
+            app.input_mode = InputMode::Normal;
+        }
+        KeyCode::Backspace => {
+            if app.filter_cursor > 0 {
+                app.filter_text.remove(app.filter_cursor - 1);
+                app.filter_cursor -= 1;
+                app.apply_filter();
+                app.tab_states[app.current_tab.index()].selected = 0;
+            }
+        }
+        KeyCode::Left => {
+            if app.filter_cursor > 0 {
+                app.filter_cursor -= 1;
+            }
+        }
+        KeyCode::Right => {
+            if app.filter_cursor < app.filter_text.len() {
+                app.filter_cursor += 1;
+            }
+        }
+        KeyCode::Char(c) => {
+            app.filter_text.insert(app.filter_cursor, c);
+            app.filter_cursor += 1;
+            app.apply_filter();
+            app.tab_states[app.current_tab.index()].selected = 0;
+        }
+        _ => {}
+    }
     EventResult::Continue
 }
 
