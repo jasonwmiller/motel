@@ -72,6 +72,7 @@ pub struct TraceGroup {
     pub duration_ns: u64,
     pub start_time_nano: u64,
     pub spans: Vec<SpanRow>,
+    pub pinned: bool,
 }
 
 /// A flattened span row for display.
@@ -503,12 +504,26 @@ impl App {
         }
     }
 
+    /// Get the trace_id of the currently selected trace (if in Traces list view).
+    pub fn get_selected_trace_id(&self) -> Option<Vec<u8>> {
+        if !matches!(self.current_tab, Tab::Traces) || !matches!(self.trace_view, TraceView::List) {
+            return None;
+        }
+        let selected = self.tab_states[Tab::Traces.index()].selected;
+        let group = self.trace_groups.get(selected)?;
+        Some(group.trace_id.clone())
+    }
+
     pub async fn refresh_from_store(&mut self, store: &SharedStore) {
         let guard = store.read().await;
 
         if self.tab_states[Tab::Traces.index()].dirty {
             let all_spans = flatten_traces(&guard.traces);
             self.trace_groups = group_traces(all_spans);
+            // Populate pinned state from store
+            for group in &mut self.trace_groups {
+                group.pinned = guard.is_pinned(&group.trace_id);
+            }
             self.trace_count = guard.trace_count();
             self.span_count = guard.span_count();
             self.tab_states[Tab::Traces.index()].dirty = false;
@@ -702,6 +717,7 @@ pub fn group_traces(spans: Vec<SpanRow>) -> Vec<TraceGroup> {
                 duration_ns: duration,
                 start_time_nano: start_time,
                 spans,
+                pinned: false,
             }
         })
         .collect();

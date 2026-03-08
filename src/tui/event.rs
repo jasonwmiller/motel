@@ -11,6 +11,8 @@ pub enum EventResult {
     Continue,
     /// Quit the application.
     Quit,
+    /// Toggle pin on a trace.
+    TogglePin(Vec<u8>),
 }
 
 /// Poll for a crossterm terminal event with the given timeout.
@@ -107,6 +109,15 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> EventResult {
         KeyCode::Char('d') => {
             if matches!(app.current_tab, Tab::Traces) {
                 app.diff_traces();
+            }
+        }
+
+        // Pin/unpin selected trace
+        KeyCode::Char('p') => {
+            if matches!(app.current_tab, Tab::Traces)
+                && let Some(trace_id) = app.get_selected_trace_id()
+            {
+                return EventResult::TogglePin(trace_id);
             }
         }
 

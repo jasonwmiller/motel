@@ -35,6 +35,10 @@ service QueryService {
 
   // Shutdown server
   rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
+
+  // Pin/unpin traces (exclude from FIFO eviction)
+  rpc PinTrace(PinTraceRequest) returns (PinTraceResponse);
+  rpc UnpinTrace(UnpinTraceRequest) returns (UnpinTraceResponse);
 }
 
 message QueryTracesRequest {
@@ -130,4 +134,20 @@ message ShutdownRequest {}
 
 message ShutdownResponse {
   string message = 1;
+}
+
+message PinTraceRequest {
+  bytes trace_id = 1;
+}
+
+message PinTraceResponse {
+  bool pinned = 1;
+}
+
+message UnpinTraceRequest {
+  bytes trace_id = 1;
+}
+
+message UnpinTraceResponse {
+  bool was_pinned = 1;
 }

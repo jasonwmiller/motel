@@ -153,6 +153,8 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
         help.push(Span::raw(":mark  "));
         help.push(Span::styled("d", Style::default().fg(key_color)));
         help.push(Span::raw(":diff  "));
+        help.push(Span::styled("p", Style::default().fg(key_color)));
+        help.push(Span::raw(":pin  "));
     }
     help.push(Span::styled("q", Style::default().fg(key_color)));
     help.push(Span::raw(":quit"));
@@ -230,12 +232,13 @@ fn draw_logs_table(f: &mut Frame, app: &App, area: Rect) {
                 format_timestamp(log.time_nano)
             };
             let svc_color = get_service_color(app, &log.service_name);
-            let mut cells = vec![
-                Cell::from(time_str),
-            ];
+            let mut cells = vec![Cell::from(time_str)];
             if multi {
                 let source = extract_source(&log.resource_attributes).unwrap_or_default();
-                cells.push(Cell::from(truncate(&source, 20)).style(Style::default().fg(Color::Rgb(190, 190, 190))));
+                cells.push(
+                    Cell::from(truncate(&source, 20))
+                        .style(Style::default().fg(Color::Rgb(190, 190, 190))),
+                );
             }
             cells.extend([
                 Cell::from(log.service_name.clone()).style(Style::default().fg(svc_color)),
@@ -374,21 +377,25 @@ fn draw_traces_list(f: &mut Frame, app: &App, area: Rect) {
                 .as_ref()
                 .is_some_and(|m| *m == group.trace_id);
             let mark_indicator = if is_marked { "*" } else { "" };
+            let pin_indicator = if group.pinned { "^ " } else { "" };
             let tid_display = if is_selected {
-                format!("\u{25b6}{} {}", mark_indicator, tid_short)
+                format!("\u{25b6}{} {}{}", mark_indicator, pin_indicator, tid_short)
             } else {
-                format!("{}{}", mark_indicator, tid_short)
+                format!("{}{}{}", mark_indicator, pin_indicator, tid_short)
             };
             let svc_color = get_service_color(app, &group.service_name);
-            let mut cells = vec![
-                Cell::from(tid_display),
-            ];
+            let mut cells = vec![Cell::from(tid_display)];
             if multi {
                 // Extract source from the root span's resource attributes
-                let source = group.spans.first()
+                let source = group
+                    .spans
+                    .first()
                     .and_then(|s| extract_source(&s.resource_attributes))
                     .unwrap_or_default();
-                cells.push(Cell::from(truncate(&source, 20)).style(Style::default().fg(Color::Rgb(190, 190, 190))));
+                cells.push(
+                    Cell::from(truncate(&source, 20))
+                        .style(Style::default().fg(Color::Rgb(190, 190, 190))),
+                );
             }
             cells.extend([
                 Cell::from(group.service_name.clone()).style(Style::default().fg(svc_color)),
@@ -612,12 +619,13 @@ fn draw_metrics_table(f: &mut Frame, app: &App, area: Rect) {
                 met.metric_name.clone()
             };
             let svc_color = get_service_color(app, &met.service_name);
-            let mut cells = vec![
-                Cell::from(truncate(&name_str, 40)),
-            ];
+            let mut cells = vec![Cell::from(truncate(&name_str, 40))];
             if multi {
                 let source = extract_source(&met.resource_attributes).unwrap_or_default();
-                cells.push(Cell::from(truncate(&source, 20)).style(Style::default().fg(Color::Rgb(190, 190, 190))));
+                cells.push(
+                    Cell::from(truncate(&source, 20))
+                        .style(Style::default().fg(Color::Rgb(190, 190, 190))),
+                );
             }
             cells.extend([
                 Cell::from(met.service_name.clone()).style(Style::default().fg(svc_color)),
