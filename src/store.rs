@@ -42,6 +42,8 @@ pub struct Store {
     pub sample_always: HashSet<String>,
     /// Counter of spans dropped by sampling, for status reporting.
     pub traces_dropped: u64,
+    /// Trace IDs that are pinned (excluded from FIFO eviction).
+    pub pinned_trace_ids: HashSet<Vec<u8>>,
 }
 
 impl Store {
@@ -85,6 +87,7 @@ impl Store {
             sample_rate,
             sample_always: sample_always.into_iter().collect(),
             traces_dropped: 0,
+            pinned_trace_ids: HashSet::new(),
         };
         (store, event_rx)
     }
@@ -156,6 +159,7 @@ impl Store {
 
     /// Core insertion logic shared by insert_traces and insert_traces_no_persist.
     fn insert_traces_inner(&mut self, resource_spans: Vec<ResourceSpans>) {
+        let mut new_tids: HashSet<Vec<u8>> = HashSet::new();
         for rs in &resource_spans {
             // Extract unique trace IDs from this ResourceSpans
             for scope_spans in &rs.scope_spans {
@@ -163,6 +167,7 @@ impl Store {
                     let tid = &span.trace_id;
                     if self.trace_id_set.insert(tid.clone()) {
                         self.trace_id_order.push_back(tid.clone());
+                        new_tids.insert(tid.clone());
                     }
                 }
             }
@@ -171,17 +176,35 @@ impl Store {
         let event = StoreEvent::TracesInserted(resource_spans.clone());
         self.traces.extend(resource_spans);
 
-        // Evict oldest traces by trace_id
+        // Evict oldest traces by trace_id, skipping pinned and newly-inserted ones
         while self.trace_id_set.len() > self.max_traces {
-            if let Some(oldest_tid) = self.trace_id_order.pop_front() {
-                self.trace_id_set.remove(&oldest_tid);
-                for rs in self.traces.iter_mut() {
-                    for ss in rs.scope_spans.iter_mut() {
-                        ss.spans.retain(|s| s.trace_id != oldest_tid);
+            let mut found = false;
+            let order_len = self.trace_id_order.len();
+            for _ in 0..order_len {
+                if let Some(oldest_tid) = self.trace_id_order.pop_front() {
+                    if self.pinned_trace_ids.contains(&oldest_tid)
+                        || new_tids.contains(&oldest_tid)
+                    {
+                        // Pinned or just inserted — put it back at the end and keep looking
+                        self.trace_id_order.push_back(oldest_tid);
+                        continue;
                     }
-                    rs.scope_spans.retain(|ss| !ss.spans.is_empty());
+                    // Not pinned — evict it
+                    self.trace_id_set.remove(&oldest_tid);
+                    for rs in self.traces.iter_mut() {
+                        for ss in rs.scope_spans.iter_mut() {
+                            ss.spans.retain(|s| s.trace_id != oldest_tid);
+                        }
+                        rs.scope_spans.retain(|ss| !ss.spans.is_empty());
+                    }
+                    self.traces.retain(|rs| !rs.scope_spans.is_empty());
+                    found = true;
+                    break;
                 }
-                self.traces.retain(|rs| !rs.scope_spans.is_empty());
+            }
+            if !found {
+                // All remaining traces are pinned or just inserted — can't evict further
+                break;
             }
         }
 
@@ -323,6 +346,7 @@ impl Store {
         self.traces.clear();
         self.trace_id_order.clear();
         self.trace_id_set.clear();
+        self.pinned_trace_ids.clear();
         let _ = self.event_tx.send(StoreEvent::TracesCleared);
         count
     }
@@ -357,6 +381,32 @@ impl Store {
         self.metrics.clear();
         let _ = self.event_tx.send(StoreEvent::MetricsCleared);
         count
+    }
+
+    /// Pin a trace ID, excluding it from FIFO eviction.
+    pub fn pin_trace(&mut self, trace_id: Vec<u8>) -> bool {
+        self.pinned_trace_ids.insert(trace_id)
+    }
+
+    /// Unpin a trace ID, allowing FIFO eviction again.
+    pub fn unpin_trace(&mut self, trace_id: &[u8]) -> bool {
+        self.pinned_trace_ids.remove(trace_id)
+    }
+
+    /// Check if a trace ID is pinned.
+    pub fn is_pinned(&self, trace_id: &[u8]) -> bool {
+        self.pinned_trace_ids.contains(trace_id)
+    }
+
+    /// Toggle pin state for a trace ID. Returns the new pin state.
+    pub fn toggle_pin(&mut self, trace_id: Vec<u8>) -> bool {
+        if self.pinned_trace_ids.contains(&trace_id) {
+            self.pinned_trace_ids.remove(&trace_id);
+            false
+        } else {
+            self.pinned_trace_ids.insert(trace_id);
+            true
+        }
     }
 
     pub fn span_count(&self) -> usize {
@@ -693,6 +743,81 @@ pub(crate) mod tests {
         let result1 = store.should_sample(&tid);
         let result2 = store.should_sample(&tid);
         assert_eq!(result1, result2);
+    }
+
+    #[test]
+    fn test_pin_prevents_eviction() {
+        let (mut store, _rx) = Store::new(2, 100, 100);
+        store.insert_traces(vec![make_resource_spans(&[1; 16], "span1")]);
+        store.insert_traces(vec![make_resource_spans(&[2; 16], "span2")]);
+
+        // Pin the first trace
+        store.pin_trace(vec![1; 16]);
+
+        // Insert a third trace — should evict trace 2 (not pinned trace 1)
+        store.insert_traces(vec![make_resource_spans(&[3; 16], "span3")]);
+
+        assert_eq!(store.trace_count(), 2);
+        assert!(store.trace_id_set.contains(&vec![1u8; 16])); // pinned, still here
+        assert!(!store.trace_id_set.contains(&vec![2u8; 16])); // evicted
+        assert!(store.trace_id_set.contains(&vec![3u8; 16])); // newly added
+    }
+
+    #[test]
+    fn test_unpin_allows_eviction() {
+        let (mut store, _rx) = Store::new(2, 100, 100);
+        store.insert_traces(vec![make_resource_spans(&[1; 16], "span1")]);
+        store.pin_trace(vec![1; 16]);
+        store.insert_traces(vec![make_resource_spans(&[2; 16], "span2")]);
+        store.insert_traces(vec![make_resource_spans(&[3; 16], "span3")]);
+
+        // Trace 1 is still pinned (trace 2 was evicted to make room for trace 3)
+        assert!(store.trace_id_set.contains(&vec![1u8; 16]));
+        assert!(store.trace_id_set.contains(&vec![3u8; 16]));
+
+        // Unpin it
+        store.unpin_trace(&vec![1; 16]);
+
+        // Now adding another trace should evict trace 3 (next in eviction order,
+        // since trace 1 was moved to the back of the queue while pinned)
+        store.insert_traces(vec![make_resource_spans(&[4; 16], "span4")]);
+        assert!(store.trace_id_set.contains(&vec![1u8; 16])); // moved to back, still here
+        assert!(!store.trace_id_set.contains(&vec![3u8; 16])); // evicted (front of queue)
+        assert!(store.trace_id_set.contains(&vec![4u8; 16])); // newly added
+    }
+
+    #[test]
+    fn test_toggle_pin() {
+        let (mut store, _rx) = Store::new(100, 100, 100);
+        store.insert_traces(vec![make_resource_spans(&[1; 16], "span1")]);
+
+        assert!(!store.is_pinned(&vec![1; 16]));
+        assert!(store.toggle_pin(vec![1; 16])); // now pinned
+        assert!(store.is_pinned(&vec![1; 16]));
+        assert!(!store.toggle_pin(vec![1; 16])); // now unpinned
+        assert!(!store.is_pinned(&vec![1; 16]));
+    }
+
+    #[test]
+    fn test_all_pinned_stops_eviction() {
+        let (mut store, _rx) = Store::new(2, 100, 100);
+        store.insert_traces(vec![make_resource_spans(&[1; 16], "span1")]);
+        store.insert_traces(vec![make_resource_spans(&[2; 16], "span2")]);
+        store.pin_trace(vec![1; 16]);
+        store.pin_trace(vec![2; 16]);
+
+        // Insert a third trace — both existing are pinned, so eviction should stop
+        store.insert_traces(vec![make_resource_spans(&[3; 16], "span3")]);
+        assert_eq!(store.trace_count(), 3); // all three still present
+    }
+
+    #[test]
+    fn test_clear_traces_clears_pins() {
+        let (mut store, _rx) = Store::new(100, 100, 100);
+        store.insert_traces(vec![make_resource_spans(&[1; 16], "span1")]);
+        store.pin_trace(vec![1; 16]);
+        store.clear_traces();
+        assert!(store.pinned_trace_ids.is_empty());
     }
 
     #[test]
