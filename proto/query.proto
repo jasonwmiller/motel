@@ -30,6 +30,10 @@ service QueryService {
   rpc ClearMetrics(ClearRequest) returns (ClearResponse);
   rpc ClearAll(ClearRequest) returns (ClearResponse);
 
+  // Pin/unpin traces (exclude from FIFO eviction)
+  rpc PinTrace(PinTraceRequest) returns (PinTraceResponse);
+  rpc UnpinTrace(UnpinTraceRequest) returns (UnpinTraceResponse);
+
   // Server status
   rpc Status(StatusRequest) returns (StatusResponse);
 
@@ -124,6 +128,22 @@ message StatusResponse {
   int64 metric_count = 4;
   double sample_rate = 5;
   int64 traces_dropped = 6;
+}
+
+message PinTraceRequest {
+  bytes trace_id = 1;
+}
+
+message PinTraceResponse {
+  bool pinned = 1;
+}
+
+message UnpinTraceRequest {
+  bytes trace_id = 1;
+}
+
+message UnpinTraceResponse {
+  bool was_pinned = 1;
 }
 
 message ShutdownRequest {}

@@ -83,6 +83,7 @@ pub struct TraceGroup {
     pub duration_ns: u64,
     pub start_time_nano: u64,
     pub spans: Vec<SpanRow>,
+    pub pinned: bool,
 }
 
 /// A flattened span row for display.
@@ -668,6 +669,10 @@ impl App {
         if self.tab_states[Tab::Traces.index()].dirty {
             let all_spans = flatten_traces(&guard.traces);
             self.trace_groups = group_traces(all_spans);
+            // Populate pinned state from store
+            for group in &mut self.trace_groups {
+                group.pinned = guard.is_pinned(&group.trace_id);
+            }
             self.trace_count = guard.trace_count();
             self.span_count = guard.span_count();
             self.tab_states[Tab::Traces.index()].dirty = false;
@@ -722,8 +727,7 @@ impl App {
                     self.filtered_trace_indices.len() - 1;
             }
             if !self.filtered_log_indices.is_empty() {
-                self.tab_states[Tab::Logs.index()].selected =
-                    self.filtered_log_indices.len() - 1;
+                self.tab_states[Tab::Logs.index()].selected = self.filtered_log_indices.len() - 1;
             }
         }
 
@@ -882,6 +886,7 @@ pub fn group_traces(spans: Vec<SpanRow>) -> Vec<TraceGroup> {
                 duration_ns: duration,
                 start_time_nano: start_time,
                 spans,
+                pinned: false,
             }
         })
         .collect();
@@ -1154,6 +1159,7 @@ mod tests {
                 events_count: 0,
                 links_count: 0,
             }],
+            pinned: false, // default for test helper
         }
     }
 
