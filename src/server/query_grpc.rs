@@ -359,6 +359,34 @@ impl QueryService for QueryServiceImpl {
         }))
     }
 
+    #[tracing::instrument(skip_all, name = "query.pin_trace")]
+    async fn pin_trace(
+        &self,
+        request: Request<PinTraceRequest>,
+    ) -> Result<Response<PinTraceResponse>, Status> {
+        let trace_id = request.into_inner().trace_id;
+        let mut store = self.store.write().await;
+        let pinned = store.pin_trace(trace_id);
+        Ok(Response::new(PinTraceResponse {
+            pinned,
+            ..Default::default()
+        }))
+    }
+
+    #[tracing::instrument(skip_all, name = "query.unpin_trace")]
+    async fn unpin_trace(
+        &self,
+        request: Request<UnpinTraceRequest>,
+    ) -> Result<Response<UnpinTraceResponse>, Status> {
+        let trace_id = request.into_inner().trace_id;
+        let mut store = self.store.write().await;
+        let was_pinned = store.unpin_trace(&trace_id);
+        Ok(Response::new(UnpinTraceResponse {
+            was_pinned,
+            ..Default::default()
+        }))
+    }
+
     #[tracing::instrument(skip_all, name = "query.status")]
     async fn status(
         &self,

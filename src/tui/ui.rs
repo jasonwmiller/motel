@@ -219,6 +219,8 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
         help.push(Span::raw(":graph  "));
     }
     if matches!(app.current_tab, Tab::Traces) && app.trace_view == TraceView::List {
+        help.push(Span::styled("p", Style::default().fg(key_color)));
+        help.push(Span::raw(":pin  "));
         help.push(Span::styled("m", Style::default().fg(key_color)));
         help.push(Span::raw(":mark  "));
         help.push(Span::styled("d", Style::default().fg(key_color)));
@@ -365,10 +367,7 @@ fn draw_log_detail(f: &mut Frame, app: &App, area: Rect) {
             l.push(detail_line("Trace ID", "-"));
         } else {
             let trace_id_str = hex_encode(&log.trace_id);
-            let trace_exists = app
-                .trace_groups
-                .iter()
-                .any(|g| g.trace_id == log.trace_id);
+            let trace_exists = app.trace_groups.iter().any(|g| g.trace_id == log.trace_id);
             if trace_exists {
                 l.push(Line::from(vec![
                     Span::styled(
@@ -482,6 +481,7 @@ fn draw_traces_list(f: &mut Frame, app: &App, area: Rect) {
                 .as_ref()
                 .is_some_and(|m| *m == group.trace_id);
             let mark_indicator = if is_marked { "*" } else { "" };
+            let pin_indicator = if group.pinned { "^" } else { "" };
             let has_outlier = crate::anomaly::trace_has_outlier(
                 &group
                     .spans
@@ -493,11 +493,14 @@ fn draw_traces_list(f: &mut Frame, app: &App, area: Rect) {
             let outlier_indicator = if has_outlier { "!" } else { "" };
             let tid_display = if is_selected {
                 format!(
-                    "\u{25b6}{}{} {}",
-                    mark_indicator, outlier_indicator, tid_short
+                    "\u{25b6}{}{}{} {}",
+                    pin_indicator, mark_indicator, outlier_indicator, tid_short
                 )
             } else {
-                format!("{}{}{}", mark_indicator, outlier_indicator, tid_short)
+                format!(
+                    "{}{}{}{}",
+                    pin_indicator, mark_indicator, outlier_indicator, tid_short
+                )
             };
             let svc_color = get_service_color(app, &group.service_name);
             let mut cells = vec![Cell::from(tid_display)];

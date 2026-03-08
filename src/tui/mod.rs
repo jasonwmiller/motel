@@ -97,6 +97,14 @@ async fn run_loop(
                     match handle_key(&mut app, key) {
                         EventResult::Continue => {}
                         EventResult::Quit => return Ok(()),
+                        EventResult::TogglePin(trace_id) => {
+                            let mut guard = store.write().await;
+                            guard.toggle_pin(trace_id.clone());
+                            drop(guard);
+                            // Mark traces dirty so refresh_from_store re-populates pinned state
+                            app.tab_states[app::Tab::Traces.index()].dirty = true;
+                            app.refresh_from_store(store).await;
+                        }
                     }
                     // Redraw after input
                     terminal.draw(|f| ui::draw(f, &mut app))?;
