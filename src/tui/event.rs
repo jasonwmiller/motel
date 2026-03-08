@@ -36,10 +36,19 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> EventResult {
     if in_subview {
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => {
-                app.close_timeline();
+                if app.timeline_detail_visible && matches!(app.trace_view, TraceView::Timeline(_)) {
+                    app.timeline_detail_visible = false;
+                    app.detail_scroll = 0;
+                } else {
+                    app.close_timeline();
+                }
                 return EventResult::Continue;
             }
             KeyCode::Enter => {
+                if matches!(app.trace_view, TraceView::Timeline(_)) {
+                    app.timeline_detail_visible = !app.timeline_detail_visible;
+                    app.detail_scroll = 0;
+                }
                 return EventResult::Continue;
             }
             _ => {}

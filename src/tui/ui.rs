@@ -163,6 +163,10 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
         help.push(Span::styled("d", Style::default().fg(key_color)));
         help.push(Span::raw(":diff  "));
     }
+    if matches!(app.current_tab, Tab::Traces) && matches!(app.trace_view, TraceView::Timeline(_)) {
+        help.push(Span::styled("Enter", Style::default().fg(key_color)));
+        help.push(Span::raw(":detail  "));
+    }
     help.push(Span::styled("q", Style::default().fg(key_color)));
     help.push(Span::raw(":quit"));
 
@@ -484,9 +488,9 @@ fn draw_traces_list(f: &mut Frame, app: &App, area: Rect) {
 // ---------------------------------------------------------------------------
 
 fn draw_traces_timeline(f: &mut Frame, app: &App, area: Rect) {
-    let wide = area.width > 120;
+    let show_detail = app.timeline_detail_visible || area.width > 120;
 
-    if wide {
+    if show_detail {
         let split = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
@@ -991,6 +995,10 @@ fn span_detail_lines(span: &super::app::SpanRow) -> Vec<Line<'static>> {
         detail_line("Service", &span.service_name),
         detail_line("Kind", &span_kind_str(span.kind)),
         detail_line("Start Time", &format_timestamp_full(span.time_nano)),
+        detail_line(
+            "End Time",
+            &format_timestamp_full(span.time_nano + span.duration_ns),
+        ),
         detail_line("Duration", &format_duration(span.duration_ns)),
         detail_line("Status Code", &status_code_str(span.status_code)),
         detail_line("Status Message", &span.status_message),

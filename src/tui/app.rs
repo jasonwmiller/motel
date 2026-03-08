@@ -237,6 +237,7 @@ pub struct App {
     pub trace_view: TraceView,
     pub timeline_selected: usize,
     pub timeline_nodes: Vec<SpanTreeNode>,
+    pub timeline_detail_visible: bool,
 
     // Cached data
     pub trace_groups: Vec<TraceGroup>,
@@ -288,6 +289,7 @@ impl App {
             trace_view: TraceView::List,
             timeline_selected: 0,
             timeline_nodes: Vec::new(),
+            timeline_detail_visible: false,
             trace_groups: Vec::new(),
             log_rows: Vec::new(),
             aggregated_metrics: Vec::new(),
@@ -499,6 +501,8 @@ impl App {
             let group = &self.trace_groups[idx];
             self.timeline_nodes = build_span_tree(&group.spans);
             self.timeline_selected = 0;
+            self.detail_scroll = 0;
+            self.timeline_detail_visible = false;
             self.trace_view = TraceView::Timeline(trace_id.to_vec());
 
             true
@@ -511,6 +515,7 @@ impl App {
     pub fn close_timeline(&mut self) {
         self.trace_view = TraceView::List;
         self.detail_scroll = 0;
+        self.timeline_detail_visible = false;
     }
 
     /// Mark the currently selected trace for diffing.
