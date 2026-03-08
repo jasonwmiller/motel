@@ -10,7 +10,7 @@ use crate::client::hex_encode;
 
 use crate::otel::common::v1::KeyValue;
 
-use super::app::{App, Tab, TraceView, format_any_value};
+use super::app::{App, InputMode, Tab, TraceView, format_any_value};
 
 // ---------------------------------------------------------------------------
 // Main draw entry point
@@ -18,14 +18,28 @@ use super::app::{App, Tab, TraceView, format_any_value};
 
 /// Render the entire UI.
 pub fn draw(f: &mut Frame, app: &mut App) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3), // tab bar
-            Constraint::Min(5),    // main content
-            Constraint::Length(1), // status bar
-        ])
-        .split(f.area());
+    let has_filter = !app.filter_text.is_empty() || app.input_mode == InputMode::Filter;
+
+    let chunks = if has_filter {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3), // tab bar
+                Constraint::Min(5),    // main content
+                Constraint::Length(1), // filter bar
+                Constraint::Length(1), // status bar
+            ])
+            .split(f.area())
+    } else {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3), // tab bar
+                Constraint::Min(5),    // main content
+                Constraint::Length(1), // status bar
+            ])
+            .split(f.area())
+    };
 
     draw_tabs(f, app, chunks[0]);
 
@@ -33,7 +47,13 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     ensure_service_colors(app);
 
     draw_main(f, app, chunks[1]);
-    draw_status_bar(f, app, chunks[2]);
+
+    if has_filter {
+        draw_filter_bar(f, app, chunks[2]);
+        draw_status_bar(f, app, chunks[3]);
+    } else {
+        draw_status_bar(f, app, chunks[2]);
+    }
 }
 
 /// Pre-populate service_colors for all known services so that draw functions
@@ -121,6 +141,47 @@ fn draw_tabs(f: &mut Frame, app: &App, area: Rect) {
 }
 
 // ---------------------------------------------------------------------------
+// Filter bar
+// ---------------------------------------------------------------------------
+
+fn draw_filter_bar(f: &mut Frame, app: &App, area: Rect) {
+    let prefix = if app.input_mode == InputMode::Filter {
+        "/"
+    } else {
+        "filter: "
+    };
+
+    let match_count = match app.current_tab {
+        Tab::Traces => app.filtered_trace_indices.len(),
+        Tab::Logs => app.filtered_log_indices.len(),
+        Tab::Metrics => app.filtered_metric_indices.len(),
+    };
+    let total = match app.current_tab {
+        Tab::Traces => app.trace_groups.len(),
+        Tab::Logs => app.log_rows.len(),
+        Tab::Metrics => app.aggregated_metrics.len(),
+    };
+
+    let line = Line::from(vec![
+        Span::styled(prefix, Style::default().fg(Color::Rgb(229, 192, 123))),
+        Span::styled(app.filter_text.clone(), Style::default().fg(Color::White)),
+        Span::styled(
+            format!("  ({}/{})", match_count, total),
+            Style::default().fg(Color::Rgb(100, 100, 100)),
+        ),
+    ]);
+
+    let bar = Paragraph::new(line);
+    f.render_widget(bar, area);
+
+    // Show cursor in filter mode
+    if app.input_mode == InputMode::Filter {
+        let cursor_x = area.x + prefix.len() as u16 + app.filter_cursor as u16;
+        f.set_cursor_position((cursor_x, area.y));
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Status bar
 // ---------------------------------------------------------------------------
 
@@ -167,6 +228,8 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
         help.push(Span::styled("Enter", Style::default().fg(key_color)));
         help.push(Span::raw(":detail  "));
     }
+    help.push(Span::styled("/", Style::default().fg(key_color)));
+    help.push(Span::raw(":filter  "));
     help.push(Span::styled("q", Style::default().fg(key_color)));
     help.push(Span::raw(":quit"));
 
@@ -225,17 +288,18 @@ fn draw_logs_table(f: &mut Frame, app: &App, area: Rect) {
     let header = Row::new(header_cells).height(1);
 
     let selected = app.tab_states[Tab::Logs.index()].selected;
+    let filtered = &app.filtered_log_indices;
     let visible_height = area.height.saturating_sub(3) as usize;
-    let offset = compute_scroll_offset(selected, visible_height, app.log_rows.len());
+    let offset = compute_scroll_offset(selected, visible_height, filtered.len());
 
-    let rows: Vec<Row> = app
-        .log_rows
+    let rows: Vec<Row> = filtered
         .iter()
         .enumerate()
         .skip(offset)
         .take(visible_height)
-        .map(|(i, log)| {
-            let is_selected = i == selected;
+        .map(|(display_idx, &real_idx)| {
+            let log = &app.log_rows[real_idx];
+            let is_selected = display_idx == selected;
             let sev_color = severity_color(&log.severity_text);
             let time_str = if is_selected {
                 format!("\u{25b6} {}", format_timestamp(log.time_nano))
@@ -256,7 +320,7 @@ fn draw_logs_table(f: &mut Frame, app: &App, area: Rect) {
                 Cell::from(log.severity_text.clone()).style(Style::default().fg(sev_color)),
                 Cell::from(truncate(&log.body, 120)),
             ]);
-            Row::new(cells).style(row_style(i, is_selected))
+            Row::new(cells).style(row_style(display_idx, is_selected))
         })
         .collect();
 
@@ -285,8 +349,9 @@ fn draw_logs_table(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_log_detail(f: &mut Frame, app: &App, area: Rect) {
-    let idx = app.tab_states[Tab::Logs.index()].selected;
-    let lines = if let Some(log) = app.log_rows.get(idx) {
+    let selected = app.tab_states[Tab::Logs.index()].selected;
+    let real_idx = app.filtered_log_indices.get(selected).copied();
+    let lines = if let Some(log) = real_idx.and_then(|i| app.log_rows.get(i)) {
         let mut l = vec![
             detail_line("Time", &format_timestamp_full(log.time_nano)),
             detail_line("Service", &log.service_name),
@@ -398,17 +463,18 @@ fn draw_traces_list(f: &mut Frame, app: &App, area: Rect) {
     let header = Row::new(header_cells).height(1);
 
     let selected = app.tab_states[Tab::Traces.index()].selected;
+    let filtered = &app.filtered_trace_indices;
     let visible_height = area.height.saturating_sub(3) as usize;
-    let offset = compute_scroll_offset(selected, visible_height, app.trace_groups.len());
+    let offset = compute_scroll_offset(selected, visible_height, filtered.len());
 
-    let rows: Vec<Row> = app
-        .trace_groups
+    let rows: Vec<Row> = filtered
         .iter()
         .enumerate()
         .skip(offset)
         .take(visible_height)
-        .map(|(i, group)| {
-            let is_selected = i == selected;
+        .map(|(display_idx, &real_idx)| {
+            let group = &app.trace_groups[real_idx];
+            let is_selected = display_idx == selected;
             let tid = hex_encode(&group.trace_id);
             let tid_short = if tid.len() > 8 { &tid[..8] } else { &tid };
             let is_marked = app
@@ -453,7 +519,7 @@ fn draw_traces_list(f: &mut Frame, app: &App, area: Rect) {
                 Cell::from(group.span_count.to_string()),
                 Cell::from(format_duration(group.duration_ns)),
             ]);
-            Row::new(cells).style(row_style(i, is_selected))
+            Row::new(cells).style(row_style(display_idx, is_selected))
         })
         .collect();
 
@@ -676,17 +742,18 @@ fn draw_metrics_table(f: &mut Frame, app: &App, area: Rect) {
     let header = Row::new(header_cells).height(1);
 
     let selected = app.tab_states[Tab::Metrics.index()].selected;
+    let filtered = &app.filtered_metric_indices;
     let visible_height = area.height.saturating_sub(3) as usize;
-    let offset = compute_scroll_offset(selected, visible_height, app.aggregated_metrics.len());
+    let offset = compute_scroll_offset(selected, visible_height, filtered.len());
 
-    let rows: Vec<Row> = app
-        .aggregated_metrics
+    let rows: Vec<Row> = filtered
         .iter()
         .enumerate()
         .skip(offset)
         .take(visible_height)
-        .map(|(i, met)| {
-            let is_selected = i == selected;
+        .map(|(display_idx, &real_idx)| {
+            let met = &app.aggregated_metrics[real_idx];
+            let is_selected = display_idx == selected;
             let name_str = if is_selected {
                 format!("\u{25b6} {}", met.metric_name)
             } else {
@@ -711,7 +778,7 @@ fn draw_metrics_table(f: &mut Frame, app: &App, area: Rect) {
                 }),
                 Cell::from(truncate(&met.display_value(), 20)),
             ]);
-            Row::new(cells).style(row_style(i, is_selected))
+            Row::new(cells).style(row_style(display_idx, is_selected))
         })
         .collect();
 
@@ -742,8 +809,9 @@ fn draw_metrics_table(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_metric_detail(f: &mut Frame, app: &App, area: Rect) {
-    let idx = app.tab_states[Tab::Metrics.index()].selected;
-    let Some(met) = app.aggregated_metrics.get(idx) else {
+    let selected = app.tab_states[Tab::Metrics.index()].selected;
+    let real_idx = app.filtered_metric_indices.get(selected).copied();
+    let Some(met) = real_idx.and_then(|i| app.aggregated_metrics.get(i)) else {
         let para = Paragraph::new("No metric selected")
             .block(Block::default().borders(Borders::ALL).title(" Detail "));
         f.render_widget(para, area);
