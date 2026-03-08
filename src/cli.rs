@@ -1092,6 +1092,10 @@ mod tests {
             sink_rotate_interval: "1h".to_string(),
             prometheus: false,
             prom_addr: "0.0.0.0:9090".to_string(),
+            alert_rules: vec![],
+            alert_webhook: None,
+            alert_cmd: None,
+            alert_stderr: false,
         };
         let config = config::ServerConfig {
             max_age: Some("1h".to_string()),
@@ -1128,6 +1132,10 @@ mod tests {
             sink_rotate_interval: "1h".to_string(),
             prometheus: false,
             prom_addr: "0.0.0.0:9090".to_string(),
+            alert_rules: vec![],
+            alert_webhook: None,
+            alert_cmd: None,
+            alert_stderr: false,
         };
         let config = config::ServerConfig {
             max_age: Some("1h".to_string()),
