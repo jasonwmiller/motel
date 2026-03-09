@@ -296,3 +296,119 @@ tbody tr:hover { background: var(--bg-lighter); }
 
 /* Span tree indentation */
 .tree-indent { color: var(--text-muted); }
+
+/* Filter bar */
+.filter-bar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 0;
+    margin-bottom: 4px;
+}
+
+.filter-input {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 12px;
+    padding: 4px 8px;
+    min-width: 140px;
+}
+
+.filter-input:focus { outline: none; border-color: var(--accent); }
+
+select.filter-input {
+    cursor: pointer;
+    appearance: auto;
+}
+
+.filter-btn {
+    padding: 4px 12px;
+    background: var(--bg-lighter);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+}
+
+.filter-btn:hover { border-color: var(--accent); color: var(--text-bright); }
+
+/* Load more button */
+.load-more-btn {
+    display: block;
+    width: 100%;
+    padding: 8px;
+    margin-top: 4px;
+    background: var(--bg-lighter);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    text-align: center;
+}
+
+.load-more-btn:hover { border-color: var(--accent); color: var(--text-bright); }
+
+/* Span detail panel */
+.span-detail-panel {
+    display: none;
+    margin-top: 12px;
+    padding: 12px;
+    background: var(--bg-lighter);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+}
+
+.span-detail-panel.active { display: block; }
+
+.span-detail-panel h4 {
+    color: var(--accent);
+    margin-bottom: 8px;
+    font-size: 13px;
+}
+
+.span-detail-panel .detail-row {
+    display: flex;
+    padding: 2px 0;
+}
+
+.span-detail-panel .detail-key {
+    color: var(--text-muted);
+    min-width: 140px;
+    flex-shrink: 0;
+}
+
+.span-detail-panel .detail-value {
+    color: var(--text-bright);
+    word-break: break-all;
+}
+
+.span-detail-panel .attrs-section {
+    margin-top: 8px;
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+}
+
+/* Status badges in waterfall */
+.status-badge {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-weight: 600;
+}
+
+.status-badge.ok { background: rgba(152, 195, 121, 0.2); color: var(--green); }
+.status-badge.error { background: rgba(224, 108, 117, 0.2); color: var(--red); }
+.status-badge.unset { color: var(--text-muted); }
+
+/* Waterfall span row clickable */
+.waterfall tbody tr { cursor: pointer; }
+.waterfall tbody tr:hover { background: var(--bg-lighter); }
+.waterfall tbody tr.selected { background: rgba(97, 175, 239, 0.1); }

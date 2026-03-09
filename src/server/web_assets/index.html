@@ -26,23 +26,42 @@
 
     <main>
         <div id="logs-tab" class="tab-content active">
+            <div class="filter-bar">
+                <input type="text" id="logs-filter-service" placeholder="Filter service..." class="filter-input">
+                <select id="logs-filter-severity" class="filter-input">
+                    <option value="">All severities</option>
+                    <option value="TRACE">TRACE</option>
+                    <option value="DEBUG">DEBUG</option>
+                    <option value="INFO">INFO</option>
+                    <option value="WARN">WARN</option>
+                    <option value="ERROR">ERROR</option>
+                    <option value="FATAL">FATAL</option>
+                </select>
+                <button class="filter-btn" id="logs-filter-apply">Apply</button>
+            </div>
             <div class="table-container">
                 <table id="logs-table">
                     <thead><tr><th>Time</th><th>Service</th><th>Severity</th><th>Body</th></tr></thead>
                     <tbody></tbody>
                 </table>
                 <div class="empty-state" id="logs-empty">No logs received yet</div>
+                <button class="load-more-btn" id="logs-load-more" style="display:none">Load more</button>
             </div>
         </div>
 
         <div id="traces-tab" class="tab-content">
             <div class="trace-list">
+                <div class="filter-bar">
+                    <input type="text" id="traces-filter-service" placeholder="Filter service..." class="filter-input">
+                    <button class="filter-btn" id="traces-filter-apply">Apply</button>
+                </div>
                 <div class="table-container">
                     <table id="traces-table">
                         <thead><tr><th>Trace ID</th><th>Service</th><th>Root Span</th><th>Spans</th><th>Duration</th><th>Time</th></tr></thead>
                         <tbody></tbody>
                     </table>
                     <div class="empty-state" id="traces-empty">No traces received yet</div>
+                    <button class="load-more-btn" id="traces-load-more" style="display:none">Load more</button>
                 </div>
             </div>
             <div id="trace-detail">
@@ -52,20 +71,26 @@
                 </div>
                 <div class="table-container">
                     <table class="waterfall" id="waterfall-table">
-                        <thead><tr><th>Span</th><th>Timeline</th><th>Duration</th></tr></thead>
+                        <thead><tr><th>Span</th><th>Service</th><th>Timeline</th><th>Duration</th><th>Status</th></tr></thead>
                         <tbody></tbody>
                     </table>
                 </div>
+                <div id="span-detail" class="span-detail-panel"></div>
             </div>
         </div>
 
         <div id="metrics-tab" class="tab-content">
+            <div class="filter-bar">
+                <input type="text" id="metrics-filter-service" placeholder="Filter service..." class="filter-input">
+                <button class="filter-btn" id="metrics-filter-apply">Apply</button>
+            </div>
             <div class="table-container">
                 <table id="metrics-table">
                     <thead><tr><th>Metric</th><th>Service</th><th>Type</th><th>Value</th><th>Unit</th><th>Data Points</th></tr></thead>
                     <tbody></tbody>
                 </table>
                 <div class="empty-state" id="metrics-empty">No metrics received yet</div>
+                <button class="load-more-btn" id="metrics-load-more" style="display:none">Load more</button>
             </div>
         </div>
 
