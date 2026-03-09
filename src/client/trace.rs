@@ -31,15 +31,14 @@ pub async fn run(args: ResolvedTracesArgs) -> Result<()> {
         until: args.until.clone().unwrap_or_default(),
         limit: args.limit.unwrap_or(0),
         attributes: attributes.into_iter().collect(),
-        ..Default::default()
     };
 
     let response = client.query_traces(request).await?;
 
-    if args.show_trace_id {
-        if let Some(trace_id) = extract_request_trace_id(&response) {
-            eprintln!("trace_id: {}", trace_id);
-        }
+    if args.show_trace_id
+        && let Some(trace_id) = extract_request_trace_id(&response)
+    {
+        eprintln!("trace_id: {}", trace_id);
     }
 
     let resp = response.into_inner();

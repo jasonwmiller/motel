@@ -247,8 +247,14 @@ pub async fn run(args: ResolvedServerArgs) -> anyhow::Result<()> {
         let sink_max_size = args.sink_max_size;
         let sink_rotate_interval = crate::sink::parse_duration(&args.sink_rotate_interval)?;
         Some(tokio::spawn(async move {
-            crate::sink::run(sink_rx, sink_dir, sink_format, sink_max_size, sink_rotate_interval)
-                .await
+            crate::sink::run(
+                sink_rx,
+                sink_dir,
+                sink_format,
+                sink_max_size,
+                sink_rotate_interval,
+            )
+            .await
         }))
     } else {
         None

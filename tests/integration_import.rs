@@ -52,11 +52,7 @@ async fn test_import_jsonl_traces() {
     let mut query = QueryServiceClient::connect(server.query_addr())
         .await
         .unwrap();
-    let status = query
-        .status(StatusRequest {})
-        .await
-        .unwrap()
-        .into_inner();
+    let status = query.status(StatusRequest {}).await.unwrap().into_inner();
     assert_eq!(status.span_count, 5);
 }
 
@@ -99,11 +95,7 @@ async fn test_import_jsonl_logs() {
     let mut query = QueryServiceClient::connect(server.query_addr())
         .await
         .unwrap();
-    let status = query
-        .status(StatusRequest {})
-        .await
-        .unwrap()
-        .into_inner();
+    let status = query.status(StatusRequest {}).await.unwrap().into_inner();
     assert_eq!(status.log_count, 3);
 }
 
@@ -147,11 +139,7 @@ async fn test_import_proto_traces() {
     let mut query = QueryServiceClient::connect(server.query_addr())
         .await
         .unwrap();
-    let status = query
-        .status(StatusRequest {})
-        .await
-        .unwrap()
-        .into_inner();
+    let status = query.status(StatusRequest {}).await.unwrap().into_inner();
     assert_eq!(status.span_count, 1);
 }
 
@@ -194,11 +182,7 @@ async fn test_import_proto_logs() {
     let mut query = QueryServiceClient::connect(server.query_addr())
         .await
         .unwrap();
-    let status = query
-        .status(StatusRequest {})
-        .await
-        .unwrap()
-        .into_inner();
+    let status = query.status(StatusRequest {}).await.unwrap().into_inner();
     assert_eq!(status.log_count, 1);
 }
 
@@ -241,10 +225,6 @@ async fn test_import_proto_metrics() {
     let mut query = QueryServiceClient::connect(server.query_addr())
         .await
         .unwrap();
-    let status = query
-        .status(StatusRequest {})
-        .await
-        .unwrap()
-        .into_inner();
+    let status = query.status(StatusRequest {}).await.unwrap().into_inner();
     assert_eq!(status.metric_count, 1);
 }

@@ -82,7 +82,7 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Command::Server(args) => {
-            let resolved = args.resolve(&config.server);
+            let resolved = (*args).resolve(&config.server);
             server::run(resolved).await
         }
         Command::View(args) => {

@@ -20,11 +20,7 @@ pub fn router(store: SharedStore) -> Router {
 async fn metrics_handler(State(store): State<SharedStore>) -> impl IntoResponse {
     let store = store.read().await;
     let body = render_prometheus(&store);
-    (
-        StatusCode::OK,
-        [("content-type", PROM_CONTENT_TYPE)],
-        body,
-    )
+    (StatusCode::OK, [("content-type", PROM_CONTENT_TYPE)], body)
 }
 
 /// Render all stored OTLP metrics plus motel internal stats in Prometheus
@@ -50,8 +46,12 @@ fn render_prometheus(store: &crate::store::Store) -> String {
                         _ => "untyped",
                     };
                     if !metric.description.is_empty() {
-                        writeln!(out, "# HELP {prom_name} {}", escape_help(&metric.description))
-                            .ok();
+                        writeln!(
+                            out,
+                            "# HELP {prom_name} {}",
+                            escape_help(&metric.description)
+                        )
+                        .ok();
                     }
                     writeln!(out, "# TYPE {prom_name} {type_str}").ok();
                 }
@@ -77,12 +77,10 @@ fn render_prometheus(store: &crate::store::Store) -> String {
                             let mut cumulative_count: u64 = 0;
                             for (i, bound) in dp.explicit_bounds.iter().enumerate() {
                                 cumulative_count += dp.bucket_counts.get(i).copied().unwrap_or(0);
-                                let le_label = insert_label(&base_labels, "le", &format_value(*bound));
-                                writeln!(
-                                    out,
-                                    "{prom_name}_bucket{le_label} {cumulative_count}"
-                                )
-                                .ok();
+                                let le_label =
+                                    insert_label(&base_labels, "le", &format_value(*bound));
+                                writeln!(out, "{prom_name}_bucket{le_label} {cumulative_count}")
+                                    .ok();
                             }
                             // +Inf bucket
                             let inf_label = insert_label(&base_labels, "le", "+Inf");
@@ -100,14 +98,13 @@ fn render_prometheus(store: &crate::store::Store) -> String {
                         for dp in &s.data_points {
                             let base_labels = format_labels(&service_name, &dp.attributes);
                             for qv in &dp.quantile_values {
-                                let q_label =
-                                    insert_label(&base_labels, "quantile", &format_value(qv.quantile));
-                                writeln!(
-                                    out,
-                                    "{prom_name}{q_label} {}",
-                                    format_value(qv.value)
-                                )
-                                .ok();
+                                let q_label = insert_label(
+                                    &base_labels,
+                                    "quantile",
+                                    &format_value(qv.quantile),
+                                );
+                                writeln!(out, "{prom_name}{q_label} {}", format_value(qv.value))
+                                    .ok();
                             }
                             writeln!(out, "{prom_name}_sum{base_labels} {}", format_value(dp.sum))
                                 .ok();
@@ -121,7 +118,11 @@ fn render_prometheus(store: &crate::store::Store) -> String {
     }
 
     // Internal motel stats
-    writeln!(out, "# HELP motel_traces_total Number of unique trace IDs stored").ok();
+    writeln!(
+        out,
+        "# HELP motel_traces_total Number of unique trace IDs stored"
+    )
+    .ok();
     writeln!(out, "# TYPE motel_traces_total gauge").ok();
     writeln!(out, "motel_traces_total {}", store.trace_count()).ok();
 
@@ -133,7 +134,11 @@ fn render_prometheus(store: &crate::store::Store) -> String {
     writeln!(out, "# TYPE motel_logs_total gauge").ok();
     writeln!(out, "motel_logs_total {}", store.log_count()).ok();
 
-    writeln!(out, "# HELP motel_metrics_total Number of metric data points stored").ok();
+    writeln!(
+        out,
+        "# HELP motel_metrics_total Number of metric data points stored"
+    )
+    .ok();
     writeln!(out, "# TYPE motel_metrics_total gauge").ok();
     writeln!(out, "motel_metrics_total {}", store.metric_count()).ok();
 
@@ -168,14 +173,12 @@ fn extract_service_name(rm: &ResourceMetrics) -> String {
         .as_ref()
         .map(|r| {
             for kv in &r.attributes {
-                if kv.key == "service.name" {
-                    if let Some(ref v) = kv.value {
-                        if let Some(crate::otel::common::v1::any_value::Value::StringValue(ref s)) =
-                            v.value
-                        {
-                            return s.clone();
-                        }
-                    }
+                if kv.key == "service.name"
+                    && let Some(ref v) = kv.value
+                    && let Some(crate::otel::common::v1::any_value::Value::StringValue(ref s)) =
+                        v.value
+                {
+                    return s.clone();
                 }
             }
             String::new()
@@ -374,9 +377,15 @@ mod tests {
 
     #[test]
     fn test_sanitize_metric_name() {
-        assert_eq!(sanitize_metric_name("http.request.duration"), "http_request_duration");
+        assert_eq!(
+            sanitize_metric_name("http.request.duration"),
+            "http_request_duration"
+        );
         assert_eq!(sanitize_metric_name("my-metric"), "my_metric");
-        assert_eq!(sanitize_metric_name("0starts_with_digit"), "_starts_with_digit");
+        assert_eq!(
+            sanitize_metric_name("0starts_with_digit"),
+            "_starts_with_digit"
+        );
         assert_eq!(sanitize_metric_name("valid_name"), "valid_name");
         assert_eq!(sanitize_metric_name("with:colon"), "with:colon");
         assert_eq!(sanitize_metric_name(""), "_unnamed");
@@ -477,16 +486,17 @@ mod tests {
 
         let output = render_prometheus(&store);
         assert!(output.contains("# TYPE http_request_duration histogram"));
-        assert!(output.contains(
-            "http_request_duration_bucket{service_name=\"test-svc\",le=\"10\"} 2"
-        ));
+        assert!(
+            output.contains("http_request_duration_bucket{service_name=\"test-svc\",le=\"10\"} 2")
+        );
         // Cumulative: 2 + 3 = 5
-        assert!(output.contains(
-            "http_request_duration_bucket{service_name=\"test-svc\",le=\"50\"} 5"
-        ));
-        assert!(output.contains(
-            "http_request_duration_bucket{service_name=\"test-svc\",le=\"+Inf\"} 10"
-        ));
+        assert!(
+            output.contains("http_request_duration_bucket{service_name=\"test-svc\",le=\"50\"} 5")
+        );
+        assert!(
+            output
+                .contains("http_request_duration_bucket{service_name=\"test-svc\",le=\"+Inf\"} 10")
+        );
         assert!(output.contains("http_request_duration_sum{service_name=\"test-svc\"} 123.5"));
         assert!(output.contains("http_request_duration_count{service_name=\"test-svc\"} 10"));
     }

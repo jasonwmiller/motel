@@ -7,9 +7,7 @@ use crate::query_proto::query_service_client::QueryServiceClient;
 pub async fn run(args: ResolvedClearArgs) -> Result<()> {
     let mut client = QueryServiceClient::connect(args.addr.clone()).await?;
 
-    let request = ClearRequest {
-        ..Default::default()
-    };
+    let request = ClearRequest {};
 
     match args.target {
         ClearTarget::Traces => {

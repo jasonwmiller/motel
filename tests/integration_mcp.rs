@@ -4,8 +4,8 @@ use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-use common::{ServerGuard, make_export_trace_request};
 use common::otel::collector::trace::v1::trace_service_client::TraceServiceClient;
+use common::{ServerGuard, make_export_trace_request};
 
 /// Send a JSON-RPC request and read the JSON-RPC response from the MCP process.
 fn send_jsonrpc(
@@ -53,7 +53,11 @@ async fn test_mcp_tools_list() {
         }
     });
     let init_response = send_jsonrpc(&mut stdin, &mut stdout, &init_request);
-    assert!(init_response.get("result").is_some(), "Initialize should succeed: {:?}", init_response);
+    assert!(
+        init_response.get("result").is_some(),
+        "Initialize should succeed: {:?}",
+        init_response
+    );
 
     // Send initialized notification
     let initialized_notif = serde_json::json!({
@@ -74,12 +78,21 @@ async fn test_mcp_tools_list() {
         "method": "tools/list"
     });
     let list_response = send_jsonrpc(&mut stdin, &mut stdout, &list_request);
-    let result = list_response.get("result").expect("tools/list should return result");
-    let tools = result.get("tools").expect("result should have tools").as_array().unwrap();
+    let result = list_response
+        .get("result")
+        .expect("tools/list should return result");
+    let tools = result
+        .get("tools")
+        .expect("result should have tools")
+        .as_array()
+        .unwrap();
 
     assert_eq!(tools.len(), 5, "Should have 5 tools");
 
-    let tool_names: Vec<&str> = tools.iter().map(|t| t.get("name").unwrap().as_str().unwrap()).collect();
+    let tool_names: Vec<&str> = tools
+        .iter()
+        .map(|t| t.get("name").unwrap().as_str().unwrap())
+        .collect();
     assert!(tool_names.contains(&"query_traces"));
     assert!(tool_names.contains(&"query_logs"));
     assert!(tool_names.contains(&"query_metrics"));
@@ -128,7 +141,8 @@ async fn test_mcp_get_status() {
     let notif_msg = serde_json::to_string(&serde_json::json!({
         "jsonrpc": "2.0",
         "method": "notifications/initialized"
-    })).unwrap();
+    }))
+    .unwrap();
     writeln!(stdin, "{}", notif_msg).unwrap();
     stdin.flush().unwrap();
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -144,13 +158,27 @@ async fn test_mcp_get_status() {
         }
     });
     let call_response = send_jsonrpc(&mut stdin, &mut stdout, &call_request);
-    let result = call_response.get("result").expect("tools/call should return result");
+    let result = call_response
+        .get("result")
+        .expect("tools/call should return result");
     let content = result.get("content").unwrap().as_array().unwrap();
     assert!(!content.is_empty(), "Should have content");
     let text = content[0].get("text").unwrap().as_str().unwrap();
-    assert!(text.contains("Traces:"), "Status should contain trace count: {}", text);
-    assert!(text.contains("Logs:"), "Status should contain log count: {}", text);
-    assert!(text.contains("Metrics:"), "Status should contain metric count: {}", text);
+    assert!(
+        text.contains("Traces:"),
+        "Status should contain trace count: {}",
+        text
+    );
+    assert!(
+        text.contains("Logs:"),
+        "Status should contain log count: {}",
+        text
+    );
+    assert!(
+        text.contains("Metrics:"),
+        "Status should contain metric count: {}",
+        text
+    );
 
     drop(stdin);
     let _ = child.kill();
@@ -162,7 +190,9 @@ async fn test_mcp_run_sql() {
     let server = ServerGuard::start().await;
 
     // Ingest some test traces
-    let mut trace_client = TraceServiceClient::connect(server.grpc_addr()).await.unwrap();
+    let mut trace_client = TraceServiceClient::connect(server.grpc_addr())
+        .await
+        .unwrap();
     let export_req = make_export_trace_request(&[1u8; 16], "test-span");
     trace_client.export(export_req).await.unwrap();
 
@@ -196,7 +226,8 @@ async fn test_mcp_run_sql() {
     let notif_msg = serde_json::to_string(&serde_json::json!({
         "jsonrpc": "2.0",
         "method": "notifications/initialized"
-    })).unwrap();
+    }))
+    .unwrap();
     writeln!(stdin, "{}", notif_msg).unwrap();
     stdin.flush().unwrap();
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -214,11 +245,21 @@ async fn test_mcp_run_sql() {
         }
     });
     let call_response = send_jsonrpc(&mut stdin, &mut stdout, &call_request);
-    let result = call_response.get("result").expect("SQL query should return result");
+    let result = call_response
+        .get("result")
+        .expect("SQL query should return result");
     let content = result.get("content").unwrap().as_array().unwrap();
     let text = content[0].get("text").unwrap().as_str().unwrap();
-    assert!(text.contains("cnt"), "SQL result should contain column name: {}", text);
-    assert!(text.contains("1"), "SQL result should contain count 1: {}", text);
+    assert!(
+        text.contains("cnt"),
+        "SQL result should contain column name: {}",
+        text
+    );
+    assert!(
+        text.contains("1"),
+        "SQL result should contain count 1: {}",
+        text
+    );
 
     drop(stdin);
     let _ = child.kill();
@@ -230,7 +271,9 @@ async fn test_mcp_query_traces_with_data() {
     let server = ServerGuard::start().await;
 
     // Ingest test traces
-    let mut trace_client = TraceServiceClient::connect(server.grpc_addr()).await.unwrap();
+    let mut trace_client = TraceServiceClient::connect(server.grpc_addr())
+        .await
+        .unwrap();
     let export_req = make_export_trace_request(&[2u8; 16], "my-operation");
     trace_client.export(export_req).await.unwrap();
 
@@ -247,40 +290,64 @@ async fn test_mcp_query_traces_with_data() {
     let mut stdout = BufReader::new(child.stdout.take().unwrap());
 
     // Initialize
-    let _init_response = send_jsonrpc(&mut stdin, &mut stdout, &serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "initialize",
-        "params": {
-            "protocolVersion": "2025-03-26",
-            "capabilities": {},
-            "clientInfo": { "name": "test-client", "version": "1.0" }
-        }
-    }));
-    writeln!(stdin, "{}", serde_json::to_string(&serde_json::json!({
-        "jsonrpc": "2.0",
-        "method": "notifications/initialized"
-    })).unwrap()).unwrap();
+    let _init_response = send_jsonrpc(
+        &mut stdin,
+        &mut stdout,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": { "name": "test-client", "version": "1.0" }
+            }
+        }),
+    );
+    writeln!(
+        stdin,
+        "{}",
+        serde_json::to_string(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized"
+        }))
+        .unwrap()
+    )
+    .unwrap();
     stdin.flush().unwrap();
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Query traces
-    let call_response = send_jsonrpc(&mut stdin, &mut stdout, &serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 2,
-        "method": "tools/call",
-        "params": {
-            "name": "query_traces",
-            "arguments": {
-                "service": "test-service"
+    let call_response = send_jsonrpc(
+        &mut stdin,
+        &mut stdout,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "query_traces",
+                "arguments": {
+                    "service": "test-service"
+                }
             }
-        }
-    }));
-    let result = call_response.get("result").expect("query_traces should return result");
+        }),
+    );
+    let result = call_response
+        .get("result")
+        .expect("query_traces should return result");
     let content = result.get("content").unwrap().as_array().unwrap();
     let text = content[0].get("text").unwrap().as_str().unwrap();
-    assert!(text.contains("my-operation"), "Should contain span name: {}", text);
-    assert!(text.contains("test-service"), "Should contain service name: {}", text);
+    assert!(
+        text.contains("my-operation"),
+        "Should contain span name: {}",
+        text
+    );
+    assert!(
+        text.contains("test-service"),
+        "Should contain service name: {}",
+        text
+    );
 
     drop(stdin);
     let _ = child.kill();
@@ -304,43 +371,66 @@ async fn test_mcp_error_handling() {
     let mut stdout = BufReader::new(child.stdout.take().unwrap());
 
     // Initialize
-    let _init_response = send_jsonrpc(&mut stdin, &mut stdout, &serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "initialize",
-        "params": {
-            "protocolVersion": "2025-03-26",
-            "capabilities": {},
-            "clientInfo": { "name": "test-client", "version": "1.0" }
-        }
-    }));
-    writeln!(stdin, "{}", serde_json::to_string(&serde_json::json!({
-        "jsonrpc": "2.0",
-        "method": "notifications/initialized"
-    })).unwrap()).unwrap();
+    let _init_response = send_jsonrpc(
+        &mut stdin,
+        &mut stdout,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": { "name": "test-client", "version": "1.0" }
+            }
+        }),
+    );
+    writeln!(
+        stdin,
+        "{}",
+        serde_json::to_string(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized"
+        }))
+        .unwrap()
+    )
+    .unwrap();
     stdin.flush().unwrap();
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Call with invalid SQL - should return error content
-    let call_response = send_jsonrpc(&mut stdin, &mut stdout, &serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 2,
-        "method": "tools/call",
-        "params": {
-            "name": "run_sql",
-            "arguments": {
-                "query": "SELECT * FROM nonexistent_table"
+    let call_response = send_jsonrpc(
+        &mut stdin,
+        &mut stdout,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "run_sql",
+                "arguments": {
+                    "query": "SELECT * FROM nonexistent_table"
+                }
             }
-        }
-    }));
-    let result = call_response.get("result").expect("Should have result even on error");
+        }),
+    );
+    let result = call_response
+        .get("result")
+        .expect("Should have result even on error");
     // The error is returned as content with isError flag
-    let is_error = result.get("isError").and_then(|v| v.as_bool()).unwrap_or(false);
+    let is_error = result
+        .get("isError")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let content = result.get("content").unwrap().as_array().unwrap();
     let text = content[0].get("text").unwrap().as_str().unwrap();
     // Either isError is true, or the content contains an error message
-    assert!(is_error || text.contains("error") || text.contains("Error"),
-        "Invalid SQL should produce error. isError={}, text={}", is_error, text);
+    assert!(
+        is_error || text.contains("error") || text.contains("Error"),
+        "Invalid SQL should produce error. isError={}, text={}",
+        is_error,
+        text
+    );
 
     drop(stdin);
     let _ = child.kill();

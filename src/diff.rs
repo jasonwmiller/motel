@@ -19,8 +19,8 @@ pub struct DiffResult {
 pub enum SpanDiff {
     /// Span exists in both traces, matched by (service_name, span_name).
     Matched {
-        span_a: SpanRow,
-        span_b: SpanRow,
+        span_a: Box<SpanRow>,
+        span_b: Box<SpanRow>,
         duration_delta_ns: i64,
         duration_pct_change: f64,
     },
@@ -85,8 +85,8 @@ pub fn compute_diff(spans_a: &[SpanRow], spans_b: &[SpanRow]) -> DiffResult {
                 (delta as f64 / sa.duration_ns as f64) * 100.0
             };
             matched.push(SpanDiff::Matched {
-                span_a: sa.clone(),
-                span_b: sb.clone(),
+                span_a: Box::new(sa.clone()),
+                span_b: Box::new(sb.clone()),
                 duration_delta_ns: delta,
                 duration_pct_change: pct,
             });

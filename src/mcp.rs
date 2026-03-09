@@ -88,15 +88,15 @@ pub struct QueryMetricsParams {
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct RunSqlParams {
     /// SQL query to execute against traces, logs, and metrics tables.
-    #[schemars(description = "SQL query to execute. Available tables: traces, logs, metrics. Supports standard SQL including aggregation, subqueries, joins. Access attributes via bracket syntax: attributes['key'], resource['key'].")]
+    #[schemars(
+        description = "SQL query to execute. Available tables: traces, logs, metrics. Supports standard SQL including aggregation, subqueries, joins. Access attributes via bracket syntax: attributes['key'], resource['key']."
+    )]
     pub query: String,
 }
 
 // -- Response formatting helpers --
 
-fn format_traces_response(
-    resource_spans: &[crate::otel::trace::v1::ResourceSpans],
-) -> String {
+fn format_traces_response(resource_spans: &[crate::otel::trace::v1::ResourceSpans]) -> String {
     let mut lines = Vec::new();
     let mut count = 0;
     for rs in resource_spans {
@@ -141,9 +141,7 @@ fn format_traces_response(
     }
 }
 
-fn format_logs_response(
-    resource_logs: &[crate::otel::logs::v1::ResourceLogs],
-) -> String {
+fn format_logs_response(resource_logs: &[crate::otel::logs::v1::ResourceLogs]) -> String {
     let mut lines = Vec::new();
     let mut count = 0;
     for rl in resource_logs {
@@ -306,10 +304,7 @@ fn format_sql_response(
 impl MotelMcpServer {
     /// Query traces stored in motel with optional filters for service, span name, trace ID, and result limit.
     #[tool(name = "query_traces")]
-    async fn query_traces(
-        &self,
-        params: Parameters<QueryTracesParams>,
-    ) -> Result<String, String> {
+    async fn query_traces(&self, params: Parameters<QueryTracesParams>) -> Result<String, String> {
         let request = QueryTracesRequest {
             service_name: params.0.service.unwrap_or_default(),
             span_name: params.0.span_name.unwrap_or_default(),
@@ -328,10 +323,7 @@ impl MotelMcpServer {
 
     /// Query logs stored in motel with optional filters for service, severity, body content, and result limit.
     #[tool(name = "query_logs")]
-    async fn query_logs(
-        &self,
-        params: Parameters<QueryLogsParams>,
-    ) -> Result<String, String> {
+    async fn query_logs(&self, params: Parameters<QueryLogsParams>) -> Result<String, String> {
         let request = QueryLogsRequest {
             service_name: params.0.service.unwrap_or_default(),
             severity: params.0.severity.unwrap_or_default(),
@@ -371,10 +363,7 @@ impl MotelMcpServer {
 
     /// Execute an arbitrary SQL query against motel's traces, logs, and metrics tables. Supports standard SQL including aggregation, subqueries, joins, and attribute access via bracket syntax (e.g., attributes['key']).
     #[tool(name = "run_sql")]
-    async fn run_sql(
-        &self,
-        params: Parameters<RunSqlParams>,
-    ) -> Result<String, String> {
+    async fn run_sql(&self, params: Parameters<RunSqlParams>) -> Result<String, String> {
         let request = SqlQueryRequest {
             query: params.0.query,
         };
@@ -483,11 +472,7 @@ mod tests {
         // No required fields (all optional)
         let required = attr.input_schema.get("required");
         assert!(
-            required.is_none()
-                || required
-                    .unwrap()
-                    .as_array()
-                    .map_or(true, |a| a.is_empty()),
+            required.is_none() || required.unwrap().as_array().map_or(true, |a| a.is_empty()),
             "query_traces should have no required fields"
         );
     }
@@ -498,14 +483,8 @@ mod tests {
         let props = attr.input_schema.get("properties").unwrap();
         assert!(props.get("query").is_some());
         // query should be required
-        let required = attr
-            .input_schema
-            .get("required")
-            .and_then(|r| r.as_array());
-        assert!(
-            required.is_some(),
-            "run_sql should have required fields"
-        );
+        let required = attr.input_schema.get("required").and_then(|r| r.as_array());
+        assert!(required.is_some(), "run_sql should have required fields");
         let required = required.unwrap();
         assert!(
             required.contains(&serde_json::Value::String("query".to_string())),
@@ -569,12 +548,10 @@ mod tests {
     fn test_format_sql_headers_only() {
         use crate::query_proto::Column;
 
-        let columns = vec![
-            Column {
-                name: "a".into(),
-                data_type: "Utf8".into(),
-            },
-        ];
+        let columns = vec![Column {
+            name: "a".into(),
+            data_type: "Utf8".into(),
+        }];
         let result = format_sql_response(&columns, &[]);
         assert!(result.contains("Columns: a"));
         assert!(result.contains("(0 rows)"));

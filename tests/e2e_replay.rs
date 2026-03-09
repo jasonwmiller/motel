@@ -50,10 +50,7 @@ fn replay_command_with_signal(
         .expect("failed to run replay command")
 }
 
-fn replay_command_dry_run(
-    source_query_addr: &str,
-    target_grpc_addr: &str,
-) -> std::process::Output {
+fn replay_command_dry_run(source_query_addr: &str, target_grpc_addr: &str) -> std::process::Output {
     let bin = env!("CARGO_BIN_EXE_motel");
     Command::new(bin)
         .args([
@@ -313,7 +310,10 @@ async fn test_replay_all_signals() {
         .await
         .expect("query traces")
         .into_inner();
-    assert_eq!(traces.resource_spans[0].scope_spans[0].spans[0].name, "all-span");
+    assert_eq!(
+        traces.resource_spans[0].scope_spans[0].spans[0].name,
+        "all-span"
+    );
 
     let logs = target_query
         .query_logs(QueryLogsRequest::default())

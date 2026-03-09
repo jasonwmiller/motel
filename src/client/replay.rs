@@ -1,12 +1,12 @@
 use anyhow::Result;
 
 use crate::cli::{ReplayArgs, ReplaySignal};
-use crate::otel::collector::logs::v1::logs_service_client::LogsServiceClient;
 use crate::otel::collector::logs::v1::ExportLogsServiceRequest;
-use crate::otel::collector::metrics::v1::metrics_service_client::MetricsServiceClient;
+use crate::otel::collector::logs::v1::logs_service_client::LogsServiceClient;
 use crate::otel::collector::metrics::v1::ExportMetricsServiceRequest;
-use crate::otel::collector::trace::v1::trace_service_client::TraceServiceClient;
+use crate::otel::collector::metrics::v1::metrics_service_client::MetricsServiceClient;
 use crate::otel::collector::trace::v1::ExportTraceServiceRequest;
+use crate::otel::collector::trace::v1::trace_service_client::TraceServiceClient;
 use crate::query_proto::query_service_client::QueryServiceClient;
 use crate::query_proto::{QueryLogsRequest, QueryMetricsRequest, QueryTracesRequest};
 
@@ -146,23 +146,14 @@ mod tests {
         let traces = ReplaySignal::Traces;
         assert!(matches!(traces, ReplaySignal::All | ReplaySignal::Traces));
         assert!(!matches!(traces, ReplaySignal::All | ReplaySignal::Logs));
-        assert!(!matches!(
-            traces,
-            ReplaySignal::All | ReplaySignal::Metrics
-        ));
+        assert!(!matches!(traces, ReplaySignal::All | ReplaySignal::Metrics));
 
         let logs = ReplaySignal::Logs;
         assert!(!matches!(logs, ReplaySignal::All | ReplaySignal::Traces));
         assert!(matches!(logs, ReplaySignal::All | ReplaySignal::Logs));
 
         let metrics = ReplaySignal::Metrics;
-        assert!(!matches!(
-            metrics,
-            ReplaySignal::All | ReplaySignal::Traces
-        ));
-        assert!(matches!(
-            metrics,
-            ReplaySignal::All | ReplaySignal::Metrics
-        ));
+        assert!(!matches!(metrics, ReplaySignal::All | ReplaySignal::Traces));
+        assert!(matches!(metrics, ReplaySignal::All | ReplaySignal::Metrics));
     }
 }

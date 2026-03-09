@@ -125,11 +125,11 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> EventResult {
             }
             Tab::Logs => {
                 let idx = app.tab_states[Tab::Logs.index()].selected;
-                if let Some(log) = app.log_rows.get(idx) {
-                    if !log.trace_id.is_empty() {
-                        let trace_id = log.trace_id.clone();
-                        app.navigate_to_trace(&trace_id);
-                    }
+                if let Some(log) = app.log_rows.get(idx)
+                    && !log.trace_id.is_empty()
+                {
+                    let trace_id = log.trace_id.clone();
+                    app.navigate_to_trace(&trace_id);
                 }
             }
             _ => {}
@@ -151,10 +151,11 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> EventResult {
 
         // Pin/unpin selected trace
         KeyCode::Char('p') => {
-            if matches!(app.current_tab, Tab::Traces) && app.trace_view == TraceView::List {
-                if let Some(trace_id) = app.get_selected_trace_id() {
-                    return EventResult::TogglePin(trace_id);
-                }
+            if matches!(app.current_tab, Tab::Traces)
+                && app.trace_view == TraceView::List
+                && let Some(trace_id) = app.get_selected_trace_id()
+            {
+                return EventResult::TogglePin(trace_id);
             }
         }
 

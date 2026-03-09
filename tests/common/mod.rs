@@ -123,29 +123,69 @@ pub fn start_server_process_with_args(
         .expect("failed to start motel server")
 }
 
-/// Wait until the query gRPC port is accepting connections (up to ~5 seconds).
-pub async fn wait_for_server(query_port: u16) {
-    let addr = format!("127.0.0.1:{query_port}");
-    for _ in 0..50 {
+/// Wait until a TCP port is accepting connections (up to ~15 seconds).
+async fn wait_for_port(port: u16) {
+    let addr = format!("127.0.0.1:{port}");
+    for _ in 0..150 {
         if tokio::net::TcpStream::connect(&addr).await.is_ok() {
-            // Give the server a moment to fully initialize after accepting TCP.
-            tokio::time::sleep(Duration::from_millis(50)).await;
             return;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    panic!("server did not become ready on port {query_port} within 5 seconds");
+    panic!("port {port} did not become ready within 15 seconds");
 }
 
-/// Convenience: allocate three ports, start the server, wait for readiness.
-/// Returns (grpc_port, http_port, query_port, child).
-pub async fn start_test_server() -> (u16, u16, u16, Child) {
+/// Wait until all server ports are accepting connections.
+pub async fn wait_for_server(query_port: u16) {
+    wait_for_port(query_port).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+}
+
+/// Try to start a server and wait for all ports. Returns None if the server
+/// process exits (e.g. due to port conflict).
+async fn try_start_server() -> Option<(u16, u16, u16, Child)> {
     let grpc_port = get_available_port();
     let http_port = get_available_port();
     let query_port = get_available_port();
-    let child = start_server_process(grpc_port, http_port, query_port);
-    wait_for_server(query_port).await;
-    (grpc_port, http_port, query_port, child)
+    let mut child = start_server_process(grpc_port, http_port, query_port);
+
+    let addr_q = format!("127.0.0.1:{query_port}");
+    let addr_g = format!("127.0.0.1:{grpc_port}");
+    let addr_h = format!("127.0.0.1:{http_port}");
+
+    for _ in 0..100 {
+        if let Some(status) = child.try_wait().ok().flatten() {
+            eprintln!(
+                "server exited with {status} (ports {grpc_port}/{http_port}/{query_port}), retrying"
+            );
+            return None;
+        }
+        let q = tokio::net::TcpStream::connect(&addr_q).await.is_ok();
+        let g = tokio::net::TcpStream::connect(&addr_g).await.is_ok();
+        let h = tokio::net::TcpStream::connect(&addr_h).await.is_ok();
+        if q && g && h {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            return Some((grpc_port, http_port, query_port, child));
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    None
+}
+
+/// Convenience: allocate three ports, start the server, wait for readiness.
+/// Retries up to 3 times if the server fails to start (e.g. port conflict).
+pub async fn start_test_server() -> (u16, u16, u16, Child) {
+    for attempt in 0..3 {
+        if let Some(result) = try_start_server().await {
+            return result;
+        }
+        if attempt < 2 {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+    panic!("failed to start test server after 3 attempts");
 }
 
 /// Guard that kills the child process when dropped.
@@ -168,17 +208,46 @@ impl ServerGuard {
     }
 
     pub async fn start_with_args(extra_args: &[&str]) -> Self {
-        let grpc_port = get_available_port();
-        let http_port = get_available_port();
-        let query_port = get_available_port();
-        let child = start_server_process_with_args(grpc_port, http_port, query_port, extra_args);
-        wait_for_server(query_port).await;
-        Self {
-            child,
-            grpc_port,
-            http_port,
-            query_port,
+        for attempt in 0..3 {
+            let grpc_port = get_available_port();
+            let http_port = get_available_port();
+            let query_port = get_available_port();
+            let mut child =
+                start_server_process_with_args(grpc_port, http_port, query_port, extra_args);
+
+            let addr_q = format!("127.0.0.1:{query_port}");
+            let addr_g = format!("127.0.0.1:{grpc_port}");
+            let addr_h = format!("127.0.0.1:{http_port}");
+            let mut ready = false;
+
+            for _ in 0..100 {
+                if let Some(status) = child.try_wait().ok().flatten() {
+                    eprintln!("server exited with {status}, retrying (attempt {attempt})");
+                    break;
+                }
+                let q = tokio::net::TcpStream::connect(&addr_q).await.is_ok();
+                let g = tokio::net::TcpStream::connect(&addr_g).await.is_ok();
+                let h = tokio::net::TcpStream::connect(&addr_h).await.is_ok();
+                if q && g && h {
+                    ready = true;
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+
+            if ready {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                return Self {
+                    child,
+                    grpc_port,
+                    http_port,
+                    query_port,
+                };
+            }
+            let _ = child.kill();
+            let _ = child.wait();
         }
+        panic!("failed to start test server after 3 attempts");
     }
 
     pub fn grpc_addr(&self) -> String {

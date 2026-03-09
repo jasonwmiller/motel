@@ -14,11 +14,7 @@ pub async fn run(args: ResolvedStatusArgs) -> Result<()> {
             )
         })?;
 
-    let response = client
-        .status(StatusRequest {
-            ..Default::default()
-        })
-        .await?;
+    let response = client.status(StatusRequest {}).await?;
     let resp = response.into_inner();
 
     println!("Traces:  {} ({} spans)", resp.trace_count, resp.span_count);

@@ -91,7 +91,10 @@ fn render_histogram(span_name: &str, durations: &[f64], bucket_count: usize) {
         max,
         mean
     );
-    println!("  p50: {:.3}ms  p95: {:.3}ms  p99: {:.3}ms\n", p50, p95, p99);
+    println!(
+        "  p50: {:.3}ms  p95: {:.3}ms  p99: {:.3}ms\n",
+        p50, p95, p99
+    );
 
     // Handle identical durations
     let range = max - min;

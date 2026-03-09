@@ -93,13 +93,11 @@ fn flatten_response_spans(
 
 fn extract_service_name(attrs: &[crate::otel::common::v1::KeyValue]) -> String {
     for kv in attrs {
-        if kv.key == "service.name" {
-            if let Some(ref v) = kv.value {
-                if let Some(crate::otel::common::v1::any_value::Value::StringValue(ref s)) = v.value
-                {
-                    return s.clone();
-                }
-            }
+        if kv.key == "service.name"
+            && let Some(ref v) = kv.value
+            && let Some(crate::otel::common::v1::any_value::Value::StringValue(ref s)) = v.value
+        {
+            return s.clone();
         }
     }
     "<unknown>".to_string()

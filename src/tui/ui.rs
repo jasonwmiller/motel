@@ -207,11 +207,11 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
     ];
     if matches!(app.current_tab, Tab::Logs) {
         let idx = app.tab_states[Tab::Logs.index()].selected;
-        if let Some(log) = app.log_rows.get(idx) {
-            if !log.trace_id.is_empty() {
-                help.push(Span::styled("Enter", Style::default().fg(key_color)));
-                help.push(Span::raw(":trace  "));
-            }
+        if let Some(log) = app.log_rows.get(idx)
+            && !log.trace_id.is_empty()
+        {
+            help.push(Span::styled("Enter", Style::default().fg(key_color)));
+            help.push(Span::raw(":trace  "));
         }
     }
     if matches!(app.current_tab, Tab::Metrics) {
@@ -1183,7 +1183,7 @@ fn row_style(index: usize, selected: bool) -> Style {
         Style::default()
             .bg(Color::Rgb(50, 55, 70))
             .fg(Color::Rgb(220, 223, 228))
-    } else if index % 2 == 0 {
+    } else if index.is_multiple_of(2) {
         Style::default()
     } else {
         Style::default().bg(Color::Rgb(30, 33, 39))

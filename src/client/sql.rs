@@ -17,15 +17,14 @@ pub async fn run(args: ResolvedSqlArgs) -> Result<()> {
 
     let request = SqlQueryRequest {
         query: args.query.clone(),
-        ..Default::default()
     };
 
     let response = client.sql_query(request).await?;
 
-    if args.show_trace_id {
-        if let Some(trace_id) = extract_request_trace_id(&response) {
-            eprintln!("trace_id: {}", trace_id);
-        }
+    if args.show_trace_id
+        && let Some(trace_id) = extract_request_trace_id(&response)
+    {
+        eprintln!("trace_id: {}", trace_id);
     }
 
     let resp = response.into_inner();

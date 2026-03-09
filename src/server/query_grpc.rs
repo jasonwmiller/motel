@@ -73,10 +73,7 @@ impl QueryService for QueryServiceImpl {
             resource_spans.truncate(req.limit as usize);
         }
 
-        Ok(Response::new(QueryTracesResponse {
-            resource_spans,
-            ..Default::default()
-        }))
+        Ok(Response::new(QueryTracesResponse { resource_spans }))
     }
 
     #[tracing::instrument(skip_all)]
@@ -139,10 +136,7 @@ impl QueryService for QueryServiceImpl {
             resource_logs.truncate(req.limit as usize);
         }
 
-        Ok(Response::new(QueryLogsResponse {
-            resource_logs,
-            ..Default::default()
-        }))
+        Ok(Response::new(QueryLogsResponse { resource_logs }))
     }
 
     #[tracing::instrument(skip_all)]
@@ -185,10 +179,7 @@ impl QueryService for QueryServiceImpl {
             resource_metrics.truncate(req.limit as usize);
         }
 
-        Ok(Response::new(QueryMetricsResponse {
-            resource_metrics,
-            ..Default::default()
-        }))
+        Ok(Response::new(QueryMetricsResponse { resource_metrics }))
     }
 
     type FollowTracesStream = ResponseStream<FollowTracesResponse>;
@@ -205,10 +196,7 @@ impl QueryService for QueryServiceImpl {
             loop {
                 match rx.recv().await {
                     Ok(StoreEvent::TracesInserted(resource_spans)) => {
-                        let resp = FollowTracesResponse {
-                            resource_spans,
-                            ..Default::default()
-                        };
+                        let resp = FollowTracesResponse { resource_spans };
                         if tx.send(Ok(resp)).await.is_err() {
                             break;
                         }
@@ -239,10 +227,7 @@ impl QueryService for QueryServiceImpl {
             loop {
                 match rx.recv().await {
                     Ok(StoreEvent::LogsInserted(resource_logs)) => {
-                        let resp = FollowLogsResponse {
-                            resource_logs,
-                            ..Default::default()
-                        };
+                        let resp = FollowLogsResponse { resource_logs };
                         if tx.send(Ok(resp)).await.is_err() {
                             break;
                         }
@@ -273,10 +258,7 @@ impl QueryService for QueryServiceImpl {
             loop {
                 match rx.recv().await {
                     Ok(StoreEvent::MetricsInserted(resource_metrics)) => {
-                        let resp = FollowMetricsResponse {
-                            resource_metrics,
-                            ..Default::default()
-                        };
+                        let resp = FollowMetricsResponse { resource_metrics };
                         if tx.send(Ok(resp)).await.is_err() {
                             break;
                         }
@@ -303,11 +285,7 @@ impl QueryService for QueryServiceImpl {
             crate::query::sql::execute_with_columns(&self.session_ctx, &req.query)
                 .await
                 .map_err(|e| Status::internal(format!("SQL error: {e}")))?;
-        Ok(Response::new(SqlQueryResponse {
-            columns,
-            rows,
-            ..Default::default()
-        }))
+        Ok(Response::new(SqlQueryResponse { columns, rows }))
     }
 
     #[tracing::instrument(skip_all, name = "query.clear_traces")]
@@ -318,7 +296,6 @@ impl QueryService for QueryServiceImpl {
         let count = self.store.write().await.clear_traces();
         Ok(Response::new(ClearResponse {
             cleared_count: count as i64,
-            ..Default::default()
         }))
     }
 
@@ -330,7 +307,6 @@ impl QueryService for QueryServiceImpl {
         let count = self.store.write().await.clear_logs();
         Ok(Response::new(ClearResponse {
             cleared_count: count as i64,
-            ..Default::default()
         }))
     }
 
@@ -342,7 +318,6 @@ impl QueryService for QueryServiceImpl {
         let count = self.store.write().await.clear_metrics();
         Ok(Response::new(ClearResponse {
             cleared_count: count as i64,
-            ..Default::default()
         }))
     }
 
@@ -355,7 +330,6 @@ impl QueryService for QueryServiceImpl {
         let count = store.clear_traces() + store.clear_logs() + store.clear_metrics();
         Ok(Response::new(ClearResponse {
             cleared_count: count as i64,
-            ..Default::default()
         }))
     }
 
@@ -367,10 +341,7 @@ impl QueryService for QueryServiceImpl {
         let trace_id = request.into_inner().trace_id;
         let mut store = self.store.write().await;
         let pinned = store.pin_trace(trace_id);
-        Ok(Response::new(PinTraceResponse {
-            pinned,
-            ..Default::default()
-        }))
+        Ok(Response::new(PinTraceResponse { pinned }))
     }
 
     #[tracing::instrument(skip_all, name = "query.unpin_trace")]
@@ -381,10 +352,7 @@ impl QueryService for QueryServiceImpl {
         let trace_id = request.into_inner().trace_id;
         let mut store = self.store.write().await;
         let was_pinned = store.unpin_trace(&trace_id);
-        Ok(Response::new(UnpinTraceResponse {
-            was_pinned,
-            ..Default::default()
-        }))
+        Ok(Response::new(UnpinTraceResponse { was_pinned }))
     }
 
     #[tracing::instrument(skip_all, name = "query.status")]
@@ -400,7 +368,6 @@ impl QueryService for QueryServiceImpl {
             metric_count: store.metric_count() as i64,
             sample_rate: store.sample_rate,
             traces_dropped: store.traces_dropped as i64,
-            ..Default::default()
         }))
     }
 
@@ -414,7 +381,6 @@ impl QueryService for QueryServiceImpl {
             let _ = tx.send(());
             Ok(Response::new(ShutdownResponse {
                 message: "Server shutting down".into(),
-                ..Default::default()
             }))
         } else {
             Err(Status::failed_precondition("Shutdown already in progress"))

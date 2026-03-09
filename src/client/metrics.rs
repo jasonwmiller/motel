@@ -25,17 +25,16 @@ pub async fn run(args: ResolvedMetricsArgs) -> Result<()> {
         since: args.since.clone().unwrap_or_default(),
         until: args.until.clone().unwrap_or_default(),
         limit: args.limit.unwrap_or(0),
-        ..Default::default()
     };
 
     let attr_filters = parse_attributes(&args.attribute)?;
 
     let response = client.query_metrics(request).await?;
 
-    if args.show_trace_id {
-        if let Some(trace_id) = extract_request_trace_id(&response) {
-            eprintln!("trace_id: {}", trace_id);
-        }
+    if args.show_trace_id
+        && let Some(trace_id) = extract_request_trace_id(&response)
+    {
+        eprintln!("trace_id: {}", trace_id);
     }
 
     let resp = response.into_inner();

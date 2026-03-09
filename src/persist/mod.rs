@@ -3,9 +3,7 @@ pub mod sqlite;
 
 use anyhow::Result;
 
-use crate::otel::{
-    logs::v1::ResourceLogs, metrics::v1::ResourceMetrics, trace::v1::ResourceSpans,
-};
+use crate::otel::{logs::v1::ResourceLogs, metrics::v1::ResourceMetrics, trace::v1::ResourceSpans};
 
 /// Trait for persistence backends.
 #[async_trait::async_trait]

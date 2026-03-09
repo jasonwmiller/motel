@@ -55,11 +55,7 @@ pub async fn run(args: ServiceMapArgs) -> Result<()> {
     for row in &resp.rows {
         let caller = row.values.first().cloned().unwrap_or_default();
         let callee = row.values.get(1).cloned().unwrap_or_default();
-        let call_count: u64 = row
-            .values
-            .get(2)
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0);
+        let call_count: u64 = row.values.get(2).and_then(|v| v.parse().ok()).unwrap_or(0);
         let avg_duration_ns: f64 = row
             .values
             .get(3)
@@ -112,7 +108,13 @@ fn render_mermaid(edges: &[Edge]) {
 
 fn sanitize_mermaid_id(name: &str) -> String {
     name.chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -123,18 +125,8 @@ mod tests {
     #[test]
     fn test_render_ascii_basic() {
         let edges = vec![
-            (
-                "frontend".to_string(),
-                "api".to_string(),
-                100,
-                45.2,
-            ),
-            (
-                "api".to_string(),
-                "database".to_string(),
-                50,
-                12.5,
-            ),
+            ("frontend".to_string(), "api".to_string(), 100, 45.2),
+            ("api".to_string(), "database".to_string(), 50, 12.5),
         ];
         // Verify no panic
         render_ascii(&edges);
@@ -142,12 +134,7 @@ mod tests {
 
     #[test]
     fn test_render_mermaid_basic() {
-        let edges = vec![(
-            "frontend".to_string(),
-            "api".to_string(),
-            100,
-            45.2,
-        )];
+        let edges = vec![("frontend".to_string(), "api".to_string(), 100, 45.2)];
         // Verify no panic
         render_mermaid(&edges);
     }

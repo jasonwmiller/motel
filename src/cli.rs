@@ -50,7 +50,7 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Command {
     /// Start OTLP server with TUI
-    Server(ServerArgs),
+    Server(Box<ServerArgs>),
     /// Attach TUI to a running server
     View(ViewArgs),
     /// Query traces

@@ -195,6 +195,12 @@ pub struct TabState {
     pub dirty: bool,
 }
 
+impl Default for TabState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TabState {
     pub fn new() -> Self {
         Self {
@@ -277,6 +283,12 @@ pub struct App {
 
     // Anomaly detection: set of span_ids flagged as outliers
     pub outlier_span_ids: HashSet<Vec<u8>>,
+}
+
+impl Default for App {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl App {
@@ -470,14 +482,14 @@ impl App {
             return;
         }
         let selected = self.tab_states[Tab::Traces.index()].selected;
-        if let Some(&real_idx) = self.filtered_trace_indices.get(selected) {
-            if let Some(group) = self.trace_groups.get(real_idx) {
-                let trace_id = group.trace_id.clone();
-                self.timeline_nodes = build_span_tree(&group.spans);
-                self.timeline_selected = 0;
-                self.detail_scroll = 0;
-                self.trace_view = TraceView::Timeline(trace_id);
-            }
+        if let Some(&real_idx) = self.filtered_trace_indices.get(selected)
+            && let Some(group) = self.trace_groups.get(real_idx)
+        {
+            let trace_id = group.trace_id.clone();
+            self.timeline_nodes = build_span_tree(&group.spans);
+            self.timeline_selected = 0;
+            self.detail_scroll = 0;
+            self.trace_view = TraceView::Timeline(trace_id);
         }
     }
 
@@ -525,10 +537,10 @@ impl App {
             return;
         }
         let selected = self.tab_states[Tab::Traces.index()].selected;
-        if let Some(&real_idx) = self.filtered_trace_indices.get(selected) {
-            if let Some(group) = self.trace_groups.get(real_idx) {
-                self.marked_trace_id = Some(group.trace_id.clone());
-            }
+        if let Some(&real_idx) = self.filtered_trace_indices.get(selected)
+            && let Some(group) = self.trace_groups.get(real_idx)
+        {
+            self.marked_trace_id = Some(group.trace_id.clone());
         }
     }
 

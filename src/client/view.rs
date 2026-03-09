@@ -7,10 +7,10 @@ use crate::otel::{
     metrics::v1::ResourceMetrics,
     trace::v1::ResourceSpans,
 };
+use crate::query_proto::query_service_client::QueryServiceClient;
 use crate::query_proto::{
     FollowRequest, QueryLogsRequest, QueryMetricsRequest, QueryTracesRequest,
 };
-use crate::query_proto::query_service_client::QueryServiceClient;
 use crate::store::{SharedStore, Store};
 
 pub async fn run(args: ResolvedViewArgs) -> Result<()> {
@@ -104,11 +104,7 @@ fn tag_resource_metrics(metrics: &mut [ResourceMetrics], source: &str) {
 }
 
 /// Load existing traces/logs/metrics from one server into the shared store.
-async fn load_existing_data(
-    addr: &str,
-    store: SharedStore,
-    server_label: &str,
-) -> Result<()> {
+async fn load_existing_data(addr: &str, store: SharedStore, server_label: &str) -> Result<()> {
     let mut client = QueryServiceClient::connect(addr.to_string()).await?;
 
     // Query existing traces
@@ -150,11 +146,7 @@ async fn load_existing_data(
 }
 
 /// Spawn background tasks that follow live data from one server.
-async fn spawn_follow_streams(
-    addr: &str,
-    store: SharedStore,
-    server_label: &str,
-) -> Result<()> {
+async fn spawn_follow_streams(addr: &str, store: SharedStore, server_label: &str) -> Result<()> {
     // Follow traces
     let mut client = QueryServiceClient::connect(addr.to_string()).await?;
     let traces_stream = client

@@ -29,14 +29,8 @@ pub async fn run(args: ImportArgs) -> Result<()> {
         let paths = expand_paths(file_pattern)?;
 
         for path in paths {
-            let format = args
-                .format
-                .clone()
-                .unwrap_or_else(|| detect_format(&path));
-            let signal = args
-                .signal
-                .clone()
-                .unwrap_or_else(|| detect_signal(&path));
+            let format = args.format.clone().unwrap_or_else(|| detect_format(&path));
+            let signal = args.signal.clone().unwrap_or_else(|| detect_signal(&path));
 
             eprintln!(
                 "Importing {} ({:?}/{:?})...",
@@ -67,10 +61,7 @@ fn detect_format(path: &Path) -> ImportFormat {
 }
 
 fn detect_signal(path: &Path) -> SignalType {
-    let stem = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("");
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
     if stem.contains("log") {
         SignalType::Logs
     } else if stem.contains("metric") {
@@ -108,9 +99,7 @@ async fn import_file(
         (ImportFormat::Jsonl, SignalType::Traces) => {
             import_jsonl_traces(path, addr, batch_size).await
         }
-        (ImportFormat::Jsonl, SignalType::Logs) => {
-            import_jsonl_logs(path, addr, batch_size).await
-        }
+        (ImportFormat::Jsonl, SignalType::Logs) => import_jsonl_logs(path, addr, batch_size).await,
         (ImportFormat::Jsonl, SignalType::Metrics) => {
             import_jsonl_metrics(path, addr, batch_size).await
         }
@@ -524,8 +513,8 @@ fn parse_timestamp_to_nanos(s: &str) -> Result<u64> {
         return Ok(0);
     }
     use chrono::DateTime;
-    let dt = DateTime::parse_from_rfc3339(s)
-        .with_context(|| format!("invalid timestamp: {}", s))?;
+    let dt =
+        DateTime::parse_from_rfc3339(s).with_context(|| format!("invalid timestamp: {}", s))?;
     Ok(dt.timestamp_nanos_opt().unwrap_or(0) as u64)
 }
 
