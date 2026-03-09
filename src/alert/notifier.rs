@@ -16,6 +16,15 @@ pub struct AlertNotification {
     pub timestamp: String,
 }
 
+/// Escape a string for safe inclusion in a shell command.
+///
+/// Wraps the value in single quotes and escapes any internal single quotes
+/// using the `'\''` idiom (end quote, escaped quote, start quote).
+fn shell_escape(s: &str) -> String {
+    let escaped = s.replace('\'', "'\\''");
+    format!("'{}'", escaped)
+}
+
 impl NotificationTarget {
     pub async fn send(&self, notification: &AlertNotification) {
         match self {
@@ -37,9 +46,11 @@ impl NotificationTarget {
                 }
             }
             Self::ShellCommand { cmd } => {
+                let escaped_message = shell_escape(&notification.message);
+                let escaped_rule = shell_escape(&notification.rule);
                 let full_cmd = cmd
-                    .replace("{message}", &notification.message)
-                    .replace("{rule}", &notification.rule);
+                    .replace("{message}", &escaped_message)
+                    .replace("{rule}", &escaped_rule);
                 match Command::new("sh").args(["-c", &full_cmd]).spawn() {
                     Ok(mut child) => {
                         let _ = child.wait();
@@ -50,5 +61,35 @@ impl NotificationTarget {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_shell_escape_plain_string() {
+        assert_eq!(shell_escape("hello world"), "'hello world'");
+    }
+
+    #[test]
+    fn test_shell_escape_single_quotes() {
+        assert_eq!(shell_escape("it's here"), "'it'\\''s here'");
+    }
+
+    #[test]
+    fn test_shell_escape_injection_attempt() {
+        let malicious = "$(rm -rf /)";
+        let escaped = shell_escape(malicious);
+        assert_eq!(escaped, "'$(rm -rf /)'");
+        // The value is safely wrapped in single quotes, preventing expansion
+    }
+
+    #[test]
+    fn test_shell_escape_backticks_and_semicolons() {
+        let malicious = "`whoami`; echo pwned";
+        let escaped = shell_escape(malicious);
+        assert_eq!(escaped, "'`whoami`; echo pwned'");
     }
 }

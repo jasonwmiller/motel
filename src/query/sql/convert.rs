@@ -143,14 +143,15 @@ pub fn metrics_args_to_sql(args: &MetricsArgs) -> Result<String, String> {
     ))
 }
 
-/// Basic SQL string escaping (single quotes and LIKE wildcards).
+/// Basic SQL string escaping (single quotes and backslashes).
 fn escape_sql(s: &str) -> String {
-    s.replace('\'', "''")
+    s.replace('\\', "\\\\").replace('\'', "''")
 }
 
-/// Escape for use inside a LIKE pattern (escapes %, _, and single quotes).
+/// Escape for use inside a LIKE pattern (escapes %, _, single quotes, and backslashes).
 fn escape_sql_like(s: &str) -> String {
-    s.replace('\'', "''")
+    s.replace('\\', "\\\\")
+        .replace('\'', "''")
         .replace('%', "\\%")
         .replace('_', "\\_")
 }
@@ -296,5 +297,63 @@ mod tests {
             crate::cli::Command::Traces(args) => assert!(args.follow),
             _ => panic!("expected Traces command"),
         }
+    }
+
+    #[test]
+    fn test_escape_sql_single_quotes() {
+        assert_eq!(escape_sql("it's"), "it''s");
+    }
+
+    #[test]
+    fn test_escape_sql_backslashes() {
+        assert_eq!(escape_sql("a\\b"), "a\\\\b");
+    }
+
+    #[test]
+    fn test_escape_sql_injection_attempt() {
+        let input = "'; DROP TABLE traces; --";
+        let escaped = escape_sql(input);
+        // The single quote is doubled: '' followed by the rest
+        assert_eq!(escaped, "''; DROP TABLE traces; --");
+        // When placed inside SQL quotes: WHERE x = '''; DROP TABLE traces; --'
+        // The doubled quote is treated as a literal quote character, not a delimiter
+    }
+
+    #[test]
+    fn test_escape_sql_like_wildcards() {
+        assert_eq!(escape_sql_like("100%"), "100\\%");
+        assert_eq!(escape_sql_like("a_b"), "a\\_b");
+    }
+
+    #[test]
+    fn test_escape_sql_like_backslash() {
+        assert_eq!(escape_sql_like("a\\b"), "a\\\\b");
+    }
+
+    #[test]
+    fn test_sql_injection_in_service_filter() {
+        let args = TracesArgs {
+            follow: false,
+            service: Some("'; DROP TABLE traces; --".into()),
+            span_name: None,
+            trace_id: None,
+            since: None,
+            until: None,
+            limit: None,
+            attribute: vec![],
+            output: Some(crate::cli::OutputFormat::Text),
+            show_trace_id: false,
+            addr: Some("http://localhost:4319".to_string()),
+        };
+        let sql = traces_args_to_sql(&args).unwrap();
+        // The injected single quote is doubled by escape_sql, so the SQL
+        // contains the value safely wrapped: the ' became '' inside the string.
+        // This prevents the attacker from breaking out of the quoted context.
+        let escaped_fragment = "service_name = '''; DROP TABLE traces; --'";
+        assert!(
+            sql.contains(escaped_fragment),
+            "SQL should contain escaped fragment, got: {}",
+            sql
+        );
     }
 }
