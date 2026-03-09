@@ -197,42 +197,11 @@ fn parse_metric_expr(s: &str) -> Result<(String, CmpOp, f64), String> {
     Err(format!("no comparison operator found in metric rule: {s}"))
 }
 
-/// Parse a duration string like "5s", "500ms", "1m", "2h", "1d"
+/// Parse a duration string like "5s", "500ms", "1m", "2h", "1d".
+///
+/// Delegates to the canonical [`crate::cli::parse_duration_arg`].
 fn parse_duration_str(s: &str) -> Result<Duration, String> {
-    let s = s.trim();
-    if let Some(num_str) = s.strip_suffix("ms") {
-        let num: u64 = num_str
-            .parse()
-            .map_err(|_| format!("invalid duration: {s}"))?;
-        return Ok(Duration::from_millis(num));
-    }
-    if let Some(num_str) = s.strip_suffix('s') {
-        let num: u64 = num_str
-            .parse()
-            .map_err(|_| format!("invalid duration: {s}"))?;
-        return Ok(Duration::from_secs(num));
-    }
-    if let Some(num_str) = s.strip_suffix('m') {
-        let num: u64 = num_str
-            .parse()
-            .map_err(|_| format!("invalid duration: {s}"))?;
-        return Ok(Duration::from_secs(num * 60));
-    }
-    if let Some(num_str) = s.strip_suffix('h') {
-        let num: u64 = num_str
-            .parse()
-            .map_err(|_| format!("invalid duration: {s}"))?;
-        return Ok(Duration::from_secs(num * 3600));
-    }
-    if let Some(num_str) = s.strip_suffix('d') {
-        let num: u64 = num_str
-            .parse()
-            .map_err(|_| format!("invalid duration: {s}"))?;
-        return Ok(Duration::from_secs(num * 86400));
-    }
-    Err(format!(
-        "invalid duration: {s}. Expected format like 5s, 500ms, 1m, 2h, 1d"
-    ))
+    crate::cli::parse_duration_arg(s)
 }
 
 /// Parse a window string like "min", "1m", "5m", "1h"

@@ -2,18 +2,38 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::config::{self, Config};
 
-/// Parse a duration string like "30s", "5m", "1h", "2d" into a `std::time::Duration`.
-fn parse_duration_arg(s: &str) -> Result<std::time::Duration, String> {
-    let (num_str, unit) = s.split_at(s.len().saturating_sub(1));
+/// Parse a duration string like "30s", "5m", "1h", "2d", "500ms" into a `std::time::Duration`.
+///
+/// This is the canonical duration parser used across the codebase. Supports:
+/// - `ms` (milliseconds): "500ms"
+/// - `s` (seconds): "30s"
+/// - `m` (minutes): "5m"
+/// - `h` (hours): "1h"
+/// - `d` (days): "2d"
+pub fn parse_duration_arg(s: &str) -> Result<std::time::Duration, String> {
+    let s = s.trim();
+    if s.len() < 2 {
+        return Err(format!("duration too short: {s}"));
+    }
+    // Check for "ms" suffix first (two-char unit)
+    if let Some(num_str) = s.strip_suffix("ms") {
+        let num: u64 = num_str
+            .parse()
+            .map_err(|_| format!("invalid duration: {s}"))?;
+        return Ok(std::time::Duration::from_millis(num));
+    }
+    let (num_str, unit) = s.split_at(s.len() - 1);
     let num: u64 = num_str
         .parse()
-        .map_err(|_| format!("Invalid duration: {}", s))?;
+        .map_err(|_| format!("invalid duration: {s}"))?;
     match unit {
         "s" => Ok(std::time::Duration::from_secs(num)),
         "m" => Ok(std::time::Duration::from_secs(num * 60)),
         "h" => Ok(std::time::Duration::from_secs(num * 3600)),
         "d" => Ok(std::time::Duration::from_secs(num * 86400)),
-        _ => Err(format!("Invalid duration unit in: {}. Use s/m/h/d.", s)),
+        _ => Err(format!(
+            "invalid duration unit in: {s}. Expected s, m, h, d, or ms."
+        )),
     }
 }
 
@@ -456,6 +476,9 @@ pub struct MetricsArgs {
     /// Maximum number of results
     #[arg(long)]
     pub limit: Option<i64>,
+    /// Filter by attribute (key=value)
+    #[arg(long, short = 'a')]
+    pub attribute: Vec<String>,
     /// Output format
     #[arg(long, short = 'o')]
     pub output: Option<OutputFormat>,
@@ -476,6 +499,7 @@ impl MetricsArgs {
             since: self.since,
             until: self.until,
             limit: self.limit,
+            attribute: self.attribute,
             output: self
                 .output
                 .or_else(|| resolve_output_format(&config.defaults.output_format))
@@ -497,6 +521,7 @@ pub struct ResolvedMetricsArgs {
     pub since: Option<String>,
     pub until: Option<String>,
     pub limit: Option<i64>,
+    pub attribute: Vec<String>,
     pub output: OutputFormat,
     pub show_trace_id: bool,
     pub addr: String,
@@ -1061,8 +1086,13 @@ mod tests {
             parse_duration_arg("2d").unwrap(),
             std::time::Duration::from_secs(172800)
         );
+        assert_eq!(
+            parse_duration_arg("500ms").unwrap(),
+            std::time::Duration::from_millis(500)
+        );
         assert!(parse_duration_arg("abc").is_err());
         assert!(parse_duration_arg("10x").is_err());
+        assert!(parse_duration_arg("s").is_err());
     }
 
     #[test]

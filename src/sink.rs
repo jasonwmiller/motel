@@ -51,8 +51,7 @@ impl RotatingWriter {
     }
 
     fn needs_rotation(&self) -> bool {
-        self.current_size >= self.max_size
-            || self.file_opened_at.elapsed() >= self.rotate_interval
+        self.current_size >= self.max_size || self.file_opened_at.elapsed() >= self.rotate_interval
     }
 
     fn next_filename(&self) -> String {
@@ -101,23 +100,11 @@ impl RotatingWriter {
     }
 }
 
-/// Parse a human-friendly duration string like "30s", "5m", "1h", "2d".
+/// Parse a human-friendly duration string like "30s", "5m", "1h", "2d", "500ms".
+///
+/// Delegates to the canonical [`crate::cli::parse_duration_arg`].
 pub fn parse_duration(s: &str) -> Result<Duration> {
-    let s = s.trim();
-    if s.len() < 2 {
-        anyhow::bail!("duration too short: {s}");
-    }
-    let (num, unit) = s.split_at(s.len() - 1);
-    let n: u64 = num
-        .parse()
-        .with_context(|| format!("invalid duration number: {num}"))?;
-    match unit {
-        "s" => Ok(Duration::from_secs(n)),
-        "m" => Ok(Duration::from_secs(n * 60)),
-        "h" => Ok(Duration::from_secs(n * 3600)),
-        "d" => Ok(Duration::from_secs(n * 86400)),
-        _ => anyhow::bail!("unknown duration unit: {unit} (expected s, m, h, or d)"),
-    }
+    crate::cli::parse_duration_arg(s).map_err(|e| anyhow::anyhow!("{e}"))
 }
 
 fn encode_resource_spans(rs: &ResourceSpans, format: &SinkFormat) -> Result<Vec<u8>> {
@@ -525,11 +512,7 @@ mod tests {
         let entries: Vec<_> = std::fs::read_dir(dir.path())
             .unwrap()
             .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.file_name()
-                    .to_string_lossy()
-                    .starts_with("traces_")
-            })
+            .filter(|e| e.file_name().to_string_lossy().starts_with("traces_"))
             .collect();
         assert_eq!(entries.len(), 1);
 

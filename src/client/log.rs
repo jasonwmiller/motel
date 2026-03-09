@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use crate::cli::{OutputFormat, ResolvedLogsArgs};
 use crate::client::trace::format_timestamp_ns;
@@ -11,7 +11,14 @@ pub async fn run(args: ResolvedLogsArgs) -> Result<()> {
         return run_follow(args).await;
     }
 
-    let mut client = QueryServiceClient::connect(args.addr.clone()).await?;
+    let mut client = QueryServiceClient::connect(args.addr.clone())
+        .await
+        .with_context(|| {
+            format!(
+                "could not connect to motel server at {}. Is it running?",
+                args.addr
+            )
+        })?;
 
     let attributes = parse_attributes(&args.attribute)?;
 
@@ -136,7 +143,14 @@ fn format_any_value(v: &crate::otel::common::v1::AnyValue) -> String {
 }
 
 async fn run_follow(args: ResolvedLogsArgs) -> Result<()> {
-    let mut client = QueryServiceClient::connect(args.addr.clone()).await?;
+    let mut client = QueryServiceClient::connect(args.addr.clone())
+        .await
+        .with_context(|| {
+            format!(
+                "could not connect to motel server at {}. Is it running?",
+                args.addr
+            )
+        })?;
 
     let mut stream = client
         .follow_logs(FollowRequest::default())
