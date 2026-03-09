@@ -230,6 +230,7 @@ mod tests {
             since: None,
             until: None,
             limit: Some(5),
+            attribute: vec![],
             output: Some(crate::cli::OutputFormat::Text),
             show_trace_id: false,
             addr: Some("http://localhost:4319".to_string()),

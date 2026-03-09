@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use crate::cli::{OutputFormat, ResolvedTracesArgs};
 use crate::client::{extract_request_trace_id, hex_encode, parse_attributes, print_table};
@@ -12,7 +12,14 @@ pub async fn run(args: ResolvedTracesArgs) -> Result<()> {
         return run_follow(args).await;
     }
 
-    let mut client = QueryServiceClient::connect(args.addr.clone()).await?;
+    let mut client = QueryServiceClient::connect(args.addr.clone())
+        .await
+        .with_context(|| {
+            format!(
+                "could not connect to motel server at {}. Is it running?",
+                args.addr
+            )
+        })?;
 
     let attributes = parse_attributes(&args.attribute)?;
 
@@ -217,7 +224,14 @@ fn detect_outlier_span_ids(rows: &[SpanRow]) -> HashSet<String> {
 }
 
 async fn run_follow(args: ResolvedTracesArgs) -> Result<()> {
-    let mut client = QueryServiceClient::connect(args.addr.clone()).await?;
+    let mut client = QueryServiceClient::connect(args.addr.clone())
+        .await
+        .with_context(|| {
+            format!(
+                "could not connect to motel server at {}. Is it running?",
+                args.addr
+            )
+        })?;
 
     let mut stream = client
         .follow_traces(FollowRequest::default())

@@ -1,11 +1,18 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use crate::cli::ResolvedStatusArgs;
 use crate::query_proto::StatusRequest;
 use crate::query_proto::query_service_client::QueryServiceClient;
 
 pub async fn run(args: ResolvedStatusArgs) -> Result<()> {
-    let mut client = QueryServiceClient::connect(args.addr.clone()).await?;
+    let mut client = QueryServiceClient::connect(args.addr.clone())
+        .await
+        .with_context(|| {
+            format!(
+                "could not connect to motel server at {}. Is it running?",
+                args.addr
+            )
+        })?;
 
     let response = client
         .status(StatusRequest {

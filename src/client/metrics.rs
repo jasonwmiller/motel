@@ -1,7 +1,7 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use crate::cli::{OutputFormat, ResolvedMetricsArgs};
-use crate::client::{extract_request_trace_id, print_table};
+use crate::client::{extract_request_trace_id, parse_attributes, print_table};
 use crate::query_proto::query_service_client::QueryServiceClient;
 use crate::query_proto::{FollowRequest, QueryMetricsRequest};
 
@@ -10,7 +10,14 @@ pub async fn run(args: ResolvedMetricsArgs) -> Result<()> {
         return run_follow(args).await;
     }
 
-    let mut client = QueryServiceClient::connect(args.addr.clone()).await?;
+    let mut client = QueryServiceClient::connect(args.addr.clone())
+        .await
+        .with_context(|| {
+            format!(
+                "could not connect to motel server at {}. Is it running?",
+                args.addr
+            )
+        })?;
 
     let request = QueryMetricsRequest {
         service_name: args.service.clone().unwrap_or_default(),
@@ -20,6 +27,8 @@ pub async fn run(args: ResolvedMetricsArgs) -> Result<()> {
         limit: args.limit.unwrap_or(0),
         ..Default::default()
     };
+
+    let attr_filters = parse_attributes(&args.attribute)?;
 
     let response = client.query_metrics(request).await?;
 
@@ -35,8 +44,14 @@ pub async fn run(args: ResolvedMetricsArgs) -> Result<()> {
     let mut rows: Vec<MetricRow> = Vec::new();
     for rm in &resp.resource_metrics {
         let service_name = extract_service_name(rm);
+        let resource_attrs = extract_resource_attributes(rm);
         for sm in &rm.scope_metrics {
             for metric in &sm.metrics {
+                // Client-side attribute filtering (proto doesn't support it)
+                if !attr_filters.is_empty() && !matches_attributes(&resource_attrs, &attr_filters) {
+                    continue;
+                }
+
                 let data_type = describe_metric_data(&metric.data);
                 rows.push(MetricRow {
                     service: service_name.clone(),
@@ -130,6 +145,43 @@ fn extract_service_name(rm: &crate::otel::metrics::v1::ResourceMetrics) -> Strin
         .unwrap_or_default()
 }
 
+fn extract_resource_attributes(
+    rm: &crate::otel::metrics::v1::ResourceMetrics,
+) -> Vec<(String, String)> {
+    rm.resource
+        .as_ref()
+        .map(|r| {
+            r.attributes
+                .iter()
+                .filter_map(|kv| {
+                    kv.value.as_ref().and_then(|v| match &v.value {
+                        Some(crate::otel::common::v1::any_value::Value::StringValue(s)) => {
+                            Some((kv.key.clone(), s.clone()))
+                        }
+                        Some(crate::otel::common::v1::any_value::Value::IntValue(i)) => {
+                            Some((kv.key.clone(), i.to_string()))
+                        }
+                        Some(crate::otel::common::v1::any_value::Value::DoubleValue(d)) => {
+                            Some((kv.key.clone(), d.to_string()))
+                        }
+                        Some(crate::otel::common::v1::any_value::Value::BoolValue(b)) => {
+                            Some((kv.key.clone(), b.to_string()))
+                        }
+                        _ => None,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Check if resource attributes match all filter key=value pairs.
+fn matches_attributes(resource_attrs: &[(String, String)], filters: &[(String, String)]) -> bool {
+    filters
+        .iter()
+        .all(|(key, value)| resource_attrs.iter().any(|(k, v)| k == key && v == value))
+}
+
 fn describe_metric_data(data: &Option<crate::otel::metrics::v1::metric::Data>) -> String {
     match data {
         Some(crate::otel::metrics::v1::metric::Data::Gauge(_)) => "Gauge".into(),
@@ -144,7 +196,16 @@ fn describe_metric_data(data: &Option<crate::otel::metrics::v1::metric::Data>) -
 }
 
 async fn run_follow(args: ResolvedMetricsArgs) -> Result<()> {
-    let mut client = QueryServiceClient::connect(args.addr.clone()).await?;
+    let attr_filters = parse_attributes(&args.attribute)?;
+
+    let mut client = QueryServiceClient::connect(args.addr.clone())
+        .await
+        .with_context(|| {
+            format!(
+                "could not connect to motel server at {}. Is it running?",
+                args.addr
+            )
+        })?;
 
     let mut stream = client
         .follow_metrics(FollowRequest::default())
@@ -165,6 +226,7 @@ async fn run_follow(args: ResolvedMetricsArgs) -> Result<()> {
             Ok(Some(resp)) => {
                 for rm in &resp.resource_metrics {
                     let service_name = extract_service_name(rm);
+                    let resource_attrs = extract_resource_attributes(rm);
                     for sm in &rm.scope_metrics {
                         for metric in &sm.metrics {
                             if let Some(ref svc) = args.service
@@ -174,6 +236,11 @@ async fn run_follow(args: ResolvedMetricsArgs) -> Result<()> {
                             }
                             if let Some(ref name) = args.name
                                 && &metric.name != name
+                            {
+                                continue;
+                            }
+                            if !attr_filters.is_empty()
+                                && !matches_attributes(&resource_attrs, &attr_filters)
                             {
                                 continue;
                             }
