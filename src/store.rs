@@ -44,6 +44,11 @@ pub struct Store {
     pub traces_dropped: u64,
     /// Trace IDs that are pinned (excluded from FIFO eviction).
     pub pinned_trace_ids: HashSet<Vec<u8>>,
+
+    /// Cached counts for O(1) status queries.
+    cached_span_count: usize,
+    cached_log_count: usize,
+    cached_metric_count: usize,
 }
 
 impl Store {
@@ -88,6 +93,9 @@ impl Store {
             sample_always: sample_always.into_iter().collect(),
             traces_dropped: 0,
             pinned_trace_ids: HashSet::new(),
+            cached_span_count: 0,
+            cached_log_count: 0,
+            cached_metric_count: 0,
         };
         (store, event_rx)
     }
@@ -160,9 +168,11 @@ impl Store {
     /// Core insertion logic shared by insert_traces and insert_traces_no_persist.
     fn insert_traces_inner(&mut self, resource_spans: Vec<ResourceSpans>) {
         let mut new_tids: HashSet<Vec<u8>> = HashSet::new();
+        let mut added_spans: usize = 0;
         for rs in &resource_spans {
             // Extract unique trace IDs from this ResourceSpans
             for scope_spans in &rs.scope_spans {
+                added_spans += scope_spans.spans.len();
                 for span in &scope_spans.spans {
                     let tid = &span.trace_id;
                     if self.trace_id_set.insert(tid.clone()) {
@@ -175,6 +185,7 @@ impl Store {
 
         let event = StoreEvent::TracesInserted(resource_spans.clone());
         self.traces.extend(resource_spans);
+        self.cached_span_count += added_spans;
 
         // Evict oldest traces by trace_id, skipping pinned and newly-inserted ones
         while self.trace_id_set.len() > self.max_traces {
@@ -182,18 +193,19 @@ impl Store {
             let order_len = self.trace_id_order.len();
             for _ in 0..order_len {
                 if let Some(oldest_tid) = self.trace_id_order.pop_front() {
-                    if self.pinned_trace_ids.contains(&oldest_tid)
-                        || new_tids.contains(&oldest_tid)
+                    if self.pinned_trace_ids.contains(&oldest_tid) || new_tids.contains(&oldest_tid)
                     {
                         // Pinned or just inserted — put it back at the end and keep looking
                         self.trace_id_order.push_back(oldest_tid);
                         continue;
                     }
-                    // Not pinned — evict it
+                    // Not pinned — evict it: count spans being removed
                     self.trace_id_set.remove(&oldest_tid);
                     for rs in self.traces.iter_mut() {
                         for ss in rs.scope_spans.iter_mut() {
+                            let before = ss.spans.len();
                             ss.spans.retain(|s| s.trace_id != oldest_tid);
+                            self.cached_span_count -= before - ss.spans.len();
                         }
                         rs.scope_spans.retain(|ss| !ss.spans.is_empty());
                     }
@@ -298,10 +310,28 @@ impl Store {
 
     /// Insert logs without writing to persistence (used during startup load).
     pub fn insert_logs_no_persist(&mut self, resource_logs: Vec<ResourceLogs>) {
+        let added: usize = resource_logs
+            .iter()
+            .map(|rl| {
+                rl.scope_logs
+                    .iter()
+                    .map(|sl| sl.log_records.len())
+                    .sum::<usize>()
+            })
+            .sum();
+        self.cached_log_count += added;
+
         let event = StoreEvent::LogsInserted(resource_logs.clone());
         self.logs.extend(resource_logs);
         while self.logs.len() > self.max_logs {
-            self.logs.pop_front();
+            if let Some(evicted) = self.logs.pop_front() {
+                let evicted_count: usize = evicted
+                    .scope_logs
+                    .iter()
+                    .map(|sl| sl.log_records.len())
+                    .sum();
+                self.cached_log_count -= evicted_count;
+            }
         }
         let _ = self.event_tx.send(event);
     }
@@ -324,10 +354,28 @@ impl Store {
 
     /// Insert metrics without writing to persistence (used during startup load).
     pub fn insert_metrics_no_persist(&mut self, resource_metrics: Vec<ResourceMetrics>) {
+        let added: usize = resource_metrics
+            .iter()
+            .map(|rm| {
+                rm.scope_metrics
+                    .iter()
+                    .map(|sm| sm.metrics.len())
+                    .sum::<usize>()
+            })
+            .sum();
+        self.cached_metric_count += added;
+
         let event = StoreEvent::MetricsInserted(resource_metrics.clone());
         self.metrics.extend(resource_metrics);
         while self.metrics.len() > self.max_metrics {
-            self.metrics.pop_front();
+            if let Some(evicted) = self.metrics.pop_front() {
+                let evicted_count: usize = evicted
+                    .scope_metrics
+                    .iter()
+                    .map(|sm| sm.metrics.len())
+                    .sum();
+                self.cached_metric_count -= evicted_count;
+            }
         }
         let _ = self.event_tx.send(event);
     }
@@ -347,6 +395,7 @@ impl Store {
         self.trace_id_order.clear();
         self.trace_id_set.clear();
         self.pinned_trace_ids.clear();
+        self.cached_span_count = 0;
         let _ = self.event_tx.send(StoreEvent::TracesCleared);
         count
     }
@@ -363,6 +412,7 @@ impl Store {
         }
         let count = self.logs.len();
         self.logs.clear();
+        self.cached_log_count = 0;
         let _ = self.event_tx.send(StoreEvent::LogsCleared);
         count
     }
@@ -379,6 +429,7 @@ impl Store {
         }
         let count = self.metrics.len();
         self.metrics.clear();
+        self.cached_metric_count = 0;
         let _ = self.event_tx.send(StoreEvent::MetricsCleared);
         count
     }
@@ -410,39 +461,15 @@ impl Store {
     }
 
     pub fn span_count(&self) -> usize {
-        self.traces
-            .iter()
-            .map(|rs| {
-                rs.scope_spans
-                    .iter()
-                    .map(|ss| ss.spans.len())
-                    .sum::<usize>()
-            })
-            .sum()
+        self.cached_span_count
     }
 
     pub fn log_count(&self) -> usize {
-        self.logs
-            .iter()
-            .map(|rl| {
-                rl.scope_logs
-                    .iter()
-                    .map(|sl| sl.log_records.len())
-                    .sum::<usize>()
-            })
-            .sum()
+        self.cached_log_count
     }
 
     pub fn metric_count(&self) -> usize {
-        self.metrics
-            .iter()
-            .map(|rm| {
-                rm.scope_metrics
-                    .iter()
-                    .map(|sm| sm.metrics.len())
-                    .sum::<usize>()
-            })
-            .sum()
+        self.cached_metric_count
     }
 
     pub fn trace_count(&self) -> usize {
@@ -457,7 +484,9 @@ impl Store {
         // Remove spans older than cutoff from each ResourceSpans
         for rs in self.traces.iter_mut() {
             for ss in rs.scope_spans.iter_mut() {
+                let before_len = ss.spans.len();
                 ss.spans.retain(|s| s.end_time_unix_nano >= cutoff_ns);
+                self.cached_span_count -= before_len - ss.spans.len();
             }
             rs.scope_spans.retain(|ss| !ss.spans.is_empty());
         }
@@ -489,6 +518,7 @@ impl Store {
         let before = self.logs.len();
         for rl in self.logs.iter_mut() {
             for sl in rl.scope_logs.iter_mut() {
+                let before_len = sl.log_records.len();
                 sl.log_records.retain(|lr| {
                     let ts = if lr.time_unix_nano > 0 {
                         lr.time_unix_nano
@@ -497,6 +527,7 @@ impl Store {
                     };
                     ts >= cutoff_ns
                 });
+                self.cached_log_count -= before_len - sl.log_records.len();
             }
             rl.scope_logs.retain(|sl| !sl.log_records.is_empty());
         }
@@ -536,7 +567,9 @@ impl Store {
                         None => {}
                     }
                 }
+                let before_metrics = sm.metrics.len();
                 sm.metrics.retain(|m| has_metric_data_points(&m.data));
+                self.cached_metric_count -= before_metrics - sm.metrics.len();
             }
             rm.scope_metrics.retain(|sm| !sm.metrics.is_empty());
         }

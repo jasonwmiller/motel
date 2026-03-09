@@ -717,20 +717,6 @@ impl App {
             self.tab_states[Tab::Metrics.index()].dirty = false;
         }
 
-        // Re-apply filter after data refresh
-        self.apply_filter();
-
-        // Follow mode: jump to last filtered row
-        if self.follow_mode {
-            if !self.filtered_trace_indices.is_empty() {
-                self.tab_states[Tab::Traces.index()].selected =
-                    self.filtered_trace_indices.len() - 1;
-            }
-            if !self.filtered_log_indices.is_empty() {
-                self.tab_states[Tab::Logs.index()].selected = self.filtered_log_indices.len() - 1;
-            }
-        }
-
         // Rebuild filtered indices after data refresh
         self.apply_filter();
 
