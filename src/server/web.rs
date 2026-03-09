@@ -1,13 +1,15 @@
+use axum::response::sse::{Event, KeepAlive};
 use axum::{
     Router,
     extract::{Query, State},
-    http::{StatusCode, header},
-    response::{IntoResponse, Json, Sse},
+    http::{HeaderValue, StatusCode, header},
+    middleware::{self, Next},
+    response::{IntoResponse, Json, Response, Sse},
     routing::get,
 };
-use axum::response::sse::{Event, KeepAlive};
 use datafusion::prelude::SessionContext;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -27,6 +29,25 @@ pub struct WebState {
     pub session_ctx: Arc<SessionContext>,
 }
 
+/// CORS middleware that adds permissive headers for reverse proxy support.
+async fn cors_middleware(request: axum::http::Request<axum::body::Body>, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    let headers = response.headers_mut();
+    headers.insert(
+        header::ACCESS_CONTROL_ALLOW_ORIGIN,
+        HeaderValue::from_static("*"),
+    );
+    headers.insert(
+        header::ACCESS_CONTROL_ALLOW_METHODS,
+        HeaderValue::from_static("GET, POST, OPTIONS"),
+    );
+    headers.insert(
+        header::ACCESS_CONTROL_ALLOW_HEADERS,
+        HeaderValue::from_static("Content-Type"),
+    );
+    response
+}
+
 pub fn router(state: WebState) -> Router {
     Router::new()
         // Static assets
@@ -41,6 +62,7 @@ pub fn router(state: WebState) -> Router {
         .route("/api/sql", get(api_sql))
         // Real-time updates
         .route("/api/events", get(sse_events))
+        .layer(middleware::from_fn(cors_middleware))
         .with_state(state)
 }
 
@@ -49,18 +71,27 @@ pub fn router(state: WebState) -> Router {
 // ---------------------------------------------------------------------------
 
 async fn index_html() -> impl IntoResponse {
-    ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], INDEX_HTML)
+    (
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        INDEX_HTML,
+    )
 }
 
 async fn app_js() -> impl IntoResponse {
     (
-        [(header::CONTENT_TYPE, "application/javascript; charset=utf-8")],
+        [(
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        )],
         APP_JS,
     )
 }
 
 async fn style_css() -> impl IntoResponse {
-    ([(header::CONTENT_TYPE, "text/css; charset=utf-8")], STYLE_CSS)
+    (
+        [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
+        STYLE_CSS,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -96,7 +127,9 @@ struct SpanNodeJson {
     duration_ns: u64,
     start_ns: u64,
     status_code: i32,
+    status_message: String,
     depth: usize,
+    attributes: HashMap<String, String>,
 }
 
 #[derive(Serialize)]
@@ -115,6 +148,25 @@ struct MetricJson {
     unit: String,
     display_value: String,
     data_point_count: usize,
+}
+
+#[derive(Deserialize)]
+struct WebTraceParams {
+    service: Option<String>,
+    limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
+struct WebLogParams {
+    service: Option<String>,
+    severity: Option<String>,
+    limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
+struct WebMetricParams {
+    service: Option<String>,
+    limit: Option<usize>,
 }
 
 #[derive(Deserialize)]
@@ -171,11 +223,30 @@ async fn api_status(State(state): State<WebState>) -> Json<StatusResponse> {
     })
 }
 
-async fn api_traces(State(state): State<WebState>) -> Json<Vec<TraceGroupJson>> {
+async fn api_traces(
+    State(state): State<WebState>,
+    Query(params): Query<WebTraceParams>,
+) -> Json<Vec<TraceGroupJson>> {
     let store = state.store.read().await;
     let all_spans = app::flatten_traces(&store.traces);
-    let groups = app::group_traces(all_spans);
+    let mut groups = app::group_traces(all_spans);
     drop(store);
+
+    // Filter by service name
+    if let Some(ref service) = params.service
+        && !service.is_empty()
+    {
+        groups.retain(|g| {
+            g.service_name
+                .to_lowercase()
+                .contains(&service.to_lowercase())
+        });
+    }
+
+    // Apply limit
+    if let Some(limit) = params.limit {
+        groups.truncate(limit);
+    }
 
     let json_groups: Vec<TraceGroupJson> = groups
         .into_iter()
@@ -183,16 +254,39 @@ async fn api_traces(State(state): State<WebState>) -> Json<Vec<TraceGroupJson>> 
             let tree_nodes = app::build_span_tree(&g.spans);
             let spans: Vec<SpanNodeJson> = tree_nodes
                 .into_iter()
-                .map(|node| SpanNodeJson {
-                    span_id: hex::encode(&node.span.span_id),
-                    parent_span_id: hex::encode(&node.span.parent_span_id),
-                    service_name: node.span.service_name.clone(),
-                    span_name: node.span.span_name.clone(),
-                    duration: format_duration(node.span.duration_ns),
-                    duration_ns: node.span.duration_ns,
-                    start_ns: node.span.time_nano,
-                    status_code: node.span.status_code,
-                    depth: node.depth,
+                .map(|node| {
+                    let attrs: HashMap<String, String> = node
+                        .span
+                        .attributes
+                        .iter()
+                        .map(|kv| {
+                            let val = kv
+                                .value
+                                .as_ref()
+                                .and_then(|v| v.value.as_ref())
+                                .map(|v| match v {
+                                    crate::otel::common::v1::any_value::Value::StringValue(s) => {
+                                        s.clone()
+                                    }
+                                    other => format!("{other:?}"),
+                                })
+                                .unwrap_or_default();
+                            (kv.key.clone(), val)
+                        })
+                        .collect();
+                    SpanNodeJson {
+                        span_id: hex::encode(&node.span.span_id),
+                        parent_span_id: hex::encode(&node.span.parent_span_id),
+                        service_name: node.span.service_name.clone(),
+                        span_name: node.span.span_name.clone(),
+                        duration: format_duration(node.span.duration_ns),
+                        duration_ns: node.span.duration_ns,
+                        start_ns: node.span.time_nano,
+                        status_code: node.span.status_code,
+                        status_message: node.span.status_message.clone(),
+                        depth: node.depth,
+                        attributes: attrs,
+                    }
                 })
                 .collect();
             TraceGroupJson {
@@ -210,10 +304,37 @@ async fn api_traces(State(state): State<WebState>) -> Json<Vec<TraceGroupJson>> 
     Json(json_groups)
 }
 
-async fn api_logs(State(state): State<WebState>) -> Json<Vec<LogRowJson>> {
+async fn api_logs(
+    State(state): State<WebState>,
+    Query(params): Query<WebLogParams>,
+) -> Json<Vec<LogRowJson>> {
     let store = state.store.read().await;
-    let log_rows = app::flatten_logs(&store.logs);
+    let mut log_rows = app::flatten_logs(&store.logs);
     drop(store);
+
+    // Filter by service name
+    if let Some(ref service) = params.service
+        && !service.is_empty()
+    {
+        log_rows.retain(|l| {
+            l.service_name
+                .to_lowercase()
+                .contains(&service.to_lowercase())
+        });
+    }
+
+    // Filter by severity
+    if let Some(ref severity) = params.severity
+        && !severity.is_empty()
+    {
+        let sev_upper = severity.to_uppercase();
+        log_rows.retain(|l| l.severity_text.to_uppercase() == sev_upper);
+    }
+
+    // Apply limit
+    if let Some(limit) = params.limit {
+        log_rows.truncate(limit);
+    }
 
     let json_logs: Vec<LogRowJson> = log_rows
         .into_iter()
@@ -228,10 +349,29 @@ async fn api_logs(State(state): State<WebState>) -> Json<Vec<LogRowJson>> {
     Json(json_logs)
 }
 
-async fn api_metrics(State(state): State<WebState>) -> Json<Vec<MetricJson>> {
+async fn api_metrics(
+    State(state): State<WebState>,
+    Query(params): Query<WebMetricParams>,
+) -> Json<Vec<MetricJson>> {
     let store = state.store.read().await;
-    let aggregated = app::aggregate_metrics(&store.metrics);
+    let mut aggregated = app::aggregate_metrics(&store.metrics);
     drop(store);
+
+    // Filter by service name
+    if let Some(ref service) = params.service
+        && !service.is_empty()
+    {
+        aggregated.retain(|m| {
+            m.service_name
+                .to_lowercase()
+                .contains(&service.to_lowercase())
+        });
+    }
+
+    // Apply limit
+    if let Some(limit) = params.limit {
+        aggregated.truncate(limit);
+    }
 
     let json_metrics: Vec<MetricJson> = aggregated
         .into_iter()
@@ -312,10 +452,9 @@ mod tests {
     async fn make_test_state() -> WebState {
         let (store, _rx) = crate::store::Store::new_shared(100, 100, 100);
         let event_tx = store.read().await.event_tx.clone();
-        let session_ctx =
-            crate::query::datafusion_ctx::create_context(store.clone())
-                .await
-                .unwrap();
+        let session_ctx = crate::query::datafusion_ctx::create_context(store.clone())
+            .await
+            .unwrap();
         WebState {
             store,
             event_tx,
@@ -332,7 +471,12 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        let ct = resp.headers().get(header::CONTENT_TYPE).unwrap().to_str().unwrap();
+        let ct = resp
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .unwrap()
+            .to_str()
+            .unwrap();
         assert!(ct.contains("text/html"));
     }
 
@@ -345,7 +489,12 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        let ct = resp.headers().get(header::CONTENT_TYPE).unwrap().to_str().unwrap();
+        let ct = resp
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .unwrap()
+            .to_str()
+            .unwrap();
         assert!(ct.contains("javascript"));
     }
 
@@ -358,7 +507,12 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        let ct = resp.headers().get(header::CONTENT_TYPE).unwrap().to_str().unwrap();
+        let ct = resp
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .unwrap()
+            .to_str()
+            .unwrap();
         assert!(ct.contains("text/css"));
     }
 

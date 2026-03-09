@@ -68,6 +68,28 @@ function statusClass(code) {
     return 'status-unset';
 }
 
+function statusText(code) {
+    if (code === 1) return 'OK';
+    if (code === 2) return 'ERROR';
+    return 'UNSET';
+}
+
+function statusBadgeClass(code) {
+    if (code === 1) return 'ok';
+    if (code === 2) return 'error';
+    return 'unset';
+}
+
+// ---------------------------------------------------------------------------
+// Pagination state
+// ---------------------------------------------------------------------------
+var DEFAULT_LIMIT = 200;
+var LOAD_MORE_INCREMENT = 200;
+
+var logsLimit = DEFAULT_LIMIT;
+var tracesLimit = DEFAULT_LIMIT;
+var metricsLimit = DEFAULT_LIMIT;
+
 // ---------------------------------------------------------------------------
 // SSE connection for real-time updates
 // ---------------------------------------------------------------------------
@@ -98,6 +120,19 @@ function connectSSE() {
 }
 
 // ---------------------------------------------------------------------------
+// Build query string from filter params
+// ---------------------------------------------------------------------------
+function buildQueryString(params) {
+    var parts = [];
+    for (var key in params) {
+        if (params[key] !== undefined && params[key] !== null && params[key] !== '') {
+            parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(params[key]));
+        }
+    }
+    return parts.length > 0 ? '?' + parts.join('&') : '';
+}
+
+// ---------------------------------------------------------------------------
 // Fetch and render: Status
 // ---------------------------------------------------------------------------
 function fetchStatus() {
@@ -113,15 +148,23 @@ function fetchStatus() {
 // Fetch and render: Logs
 // ---------------------------------------------------------------------------
 function fetchLogs() {
-    fetch('/api/logs').then(function(r) { return r.json(); }).then(function(logs) {
+    var service = document.getElementById('logs-filter-service').value.trim();
+    var severity = document.getElementById('logs-filter-severity').value;
+    var qs = buildQueryString({ service: service, severity: severity, limit: logsLimit });
+
+    fetch('/api/logs' + qs).then(function(r) { return r.json(); }).then(function(logs) {
         var tbody = document.querySelector('#logs-table tbody');
         var empty = document.getElementById('logs-empty');
+        var loadMore = document.getElementById('logs-load-more');
         if (!logs || logs.length === 0) {
             tbody.innerHTML = '';
             empty.style.display = 'block';
+            loadMore.style.display = 'none';
             return;
         }
         empty.style.display = 'none';
+        // Show load more if we hit the limit
+        loadMore.style.display = logs.length >= logsLimit ? 'block' : 'none';
         // Show newest first
         var rows = logs.slice().reverse();
         tbody.innerHTML = rows.map(function(log) {
@@ -141,7 +184,10 @@ function fetchLogs() {
 var traceGroups = [];
 
 function fetchTraces() {
-    fetch('/api/traces').then(function(r) { return r.json(); }).then(function(groups) {
+    var service = document.getElementById('traces-filter-service').value.trim();
+    var qs = buildQueryString({ service: service, limit: tracesLimit });
+
+    fetch('/api/traces' + qs).then(function(r) { return r.json(); }).then(function(groups) {
         traceGroups = groups || [];
         renderTraceList();
     }).catch(function() {});
@@ -150,12 +196,15 @@ function fetchTraces() {
 function renderTraceList() {
     var tbody = document.querySelector('#traces-table tbody');
     var empty = document.getElementById('traces-empty');
+    var loadMore = document.getElementById('traces-load-more');
     if (!traceGroups || traceGroups.length === 0) {
         tbody.innerHTML = '';
         empty.style.display = 'block';
+        loadMore.style.display = 'none';
         return;
     }
     empty.style.display = 'none';
+    loadMore.style.display = traceGroups.length >= tracesLimit ? 'block' : 'none';
     // Show newest first
     var groups = traceGroups.slice().reverse();
     tbody.innerHTML = groups.map(function(g, i) {
@@ -189,6 +238,11 @@ function showTraceDetail(idx) {
     document.getElementById('trace-detail-title').textContent =
         g.root_span_name + ' (' + g.span_count + ' spans, ' + g.duration + ')';
 
+    // Hide span detail panel
+    var spanDetail = document.getElementById('span-detail');
+    spanDetail.classList.remove('active');
+    spanDetail.innerHTML = '';
+
     // Build waterfall
     var spans = g.spans || [];
     if (spans.length === 0) return;
@@ -203,7 +257,7 @@ function showTraceDetail(idx) {
     if (totalRange === 0) totalRange = 1;
 
     var tbody = document.querySelector('#waterfall-table tbody');
-    tbody.innerHTML = spans.map(function(s) {
+    tbody.innerHTML = spans.map(function(s, i) {
         var indent = '';
         for (var d = 0; d < s.depth; d++) {
             indent += d === s.depth - 1 ? '<span class="tree-indent">\u251c\u2500 </span>' : '<span class="tree-indent">\u2502  </span>';
@@ -212,34 +266,91 @@ function showTraceDetail(idx) {
         var widthPct = Math.max(0.5, (s.duration_ns / totalRange * 100)).toFixed(2);
         var color = serviceColor(s.service_name);
         var statusCls = statusClass(s.status_code);
-        return '<tr>' +
+        var badgeCls = statusBadgeClass(s.status_code);
+        var sText = statusText(s.status_code);
+        return '<tr class="span-row" data-span-idx="' + i + '">' +
             '<td class="span-name">' + indent + '<span class="' + statusCls + '">' + escapeHtml(s.span_name) + '</span></td>' +
+            '<td style="font-size:11px;color:' + color + '">' + escapeHtml(s.service_name) + '</td>' +
             '<td class="span-bar-cell"><div class="span-bar-container">' +
             '<div class="span-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;background:' + color + '" title="' + escapeHtml(s.service_name) + ': ' + escapeHtml(s.span_name) + '"></div>' +
             '</div></td>' +
             '<td class="span-duration">' + escapeHtml(s.duration) + '</td>' +
+            '<td><span class="status-badge ' + badgeCls + '">' + sText + '</span></td>' +
             '</tr>';
     }).join('');
+
+    // Click handlers for span rows
+    tbody.querySelectorAll('.span-row').forEach(function(row) {
+        row.addEventListener('click', function() {
+            // Remove previous selection
+            tbody.querySelectorAll('.span-row').forEach(function(r) { r.classList.remove('selected'); });
+            row.classList.add('selected');
+            var spanIdx = parseInt(row.getAttribute('data-span-idx'));
+            showSpanDetail(spans[spanIdx]);
+        });
+    });
+}
+
+function showSpanDetail(span) {
+    if (!span) return;
+    var panel = document.getElementById('span-detail');
+    panel.classList.add('active');
+
+    var statusCls = statusClass(span.status_code);
+    var sText = statusText(span.status_code);
+
+    var html = '<h4>Span Detail</h4>';
+    html += '<div class="detail-row"><span class="detail-key">Span Name</span><span class="detail-value">' + escapeHtml(span.span_name) + '</span></div>';
+    html += '<div class="detail-row"><span class="detail-key">Service</span><span class="detail-value">' + escapeHtml(span.service_name) + '</span></div>';
+    html += '<div class="detail-row"><span class="detail-key">Span ID</span><span class="detail-value" style="font-family:monospace;font-size:11px">' + escapeHtml(span.span_id) + '</span></div>';
+    if (span.parent_span_id && span.parent_span_id !== '0000000000000000') {
+        html += '<div class="detail-row"><span class="detail-key">Parent Span ID</span><span class="detail-value" style="font-family:monospace;font-size:11px">' + escapeHtml(span.parent_span_id) + '</span></div>';
+    }
+    html += '<div class="detail-row"><span class="detail-key">Duration</span><span class="detail-value">' + escapeHtml(span.duration) + '</span></div>';
+    html += '<div class="detail-row"><span class="detail-key">Status</span><span class="detail-value ' + statusCls + '">' + sText + '</span></div>';
+    if (span.status_message) {
+        html += '<div class="detail-row"><span class="detail-key">Status Message</span><span class="detail-value">' + escapeHtml(span.status_message) + '</span></div>';
+    }
+
+    // Attributes
+    var attrs = span.attributes || {};
+    var attrKeys = Object.keys(attrs);
+    if (attrKeys.length > 0) {
+        html += '<div class="attrs-section"><h4>Attributes</h4>';
+        attrKeys.sort().forEach(function(key) {
+            html += '<div class="detail-row"><span class="detail-key">' + escapeHtml(key) + '</span><span class="detail-value">' + escapeHtml(String(attrs[key])) + '</span></div>';
+        });
+        html += '</div>';
+    }
+
+    panel.innerHTML = html;
 }
 
 document.getElementById('trace-back').addEventListener('click', function() {
     document.getElementById('trace-detail').classList.remove('active');
     document.querySelector('.trace-list').style.display = 'block';
+    document.getElementById('span-detail').classList.remove('active');
 });
 
 // ---------------------------------------------------------------------------
 // Fetch and render: Metrics
 // ---------------------------------------------------------------------------
 function fetchMetrics() {
-    fetch('/api/metrics').then(function(r) { return r.json(); }).then(function(metrics) {
+    var service = document.getElementById('metrics-filter-service').value.trim();
+    var qs = buildQueryString({ service: service, limit: metricsLimit });
+
+    fetch('/api/metrics' + qs).then(function(r) { return r.json(); }).then(function(metrics) {
         var tbody = document.querySelector('#metrics-table tbody');
         var empty = document.getElementById('metrics-empty');
+        var loadMore = document.getElementById('metrics-load-more');
         if (!metrics || metrics.length === 0) {
             tbody.innerHTML = '';
             empty.style.display = 'block';
+            loadMore.style.display = 'none';
             return;
         }
         empty.style.display = 'none';
+        loadMore.style.display = metrics.length >= metricsLimit ? 'block' : 'none';
         tbody.innerHTML = metrics.map(function(m) {
             return '<tr>' +
                 '<td>' + escapeHtml(m.metric_name) + '</td>' +
@@ -252,6 +363,57 @@ function fetchMetrics() {
         }).join('');
     }).catch(function() {});
 }
+
+// ---------------------------------------------------------------------------
+// Filter apply handlers
+// ---------------------------------------------------------------------------
+document.getElementById('logs-filter-apply').addEventListener('click', function() {
+    logsLimit = DEFAULT_LIMIT;
+    fetchLogs();
+});
+
+document.getElementById('traces-filter-apply').addEventListener('click', function() {
+    tracesLimit = DEFAULT_LIMIT;
+    fetchTraces();
+});
+
+document.getElementById('metrics-filter-apply').addEventListener('click', function() {
+    metricsLimit = DEFAULT_LIMIT;
+    fetchMetrics();
+});
+
+// Also apply on Enter key in filter inputs
+document.getElementById('logs-filter-service').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { logsLimit = DEFAULT_LIMIT; fetchLogs(); }
+});
+document.getElementById('traces-filter-service').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { tracesLimit = DEFAULT_LIMIT; fetchTraces(); }
+});
+document.getElementById('metrics-filter-service').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { metricsLimit = DEFAULT_LIMIT; fetchMetrics(); }
+});
+document.getElementById('logs-filter-severity').addEventListener('change', function() {
+    logsLimit = DEFAULT_LIMIT;
+    fetchLogs();
+});
+
+// ---------------------------------------------------------------------------
+// Load more handlers
+// ---------------------------------------------------------------------------
+document.getElementById('logs-load-more').addEventListener('click', function() {
+    logsLimit += LOAD_MORE_INCREMENT;
+    fetchLogs();
+});
+
+document.getElementById('traces-load-more').addEventListener('click', function() {
+    tracesLimit += LOAD_MORE_INCREMENT;
+    fetchTraces();
+});
+
+document.getElementById('metrics-load-more').addEventListener('click', function() {
+    metricsLimit += LOAD_MORE_INCREMENT;
+    fetchMetrics();
+});
 
 // ---------------------------------------------------------------------------
 // SQL query execution
