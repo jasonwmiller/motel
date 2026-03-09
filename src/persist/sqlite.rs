@@ -4,9 +4,7 @@ use anyhow::{Context, Result};
 use prost::Message;
 use rusqlite::Connection;
 
-use crate::otel::{
-    logs::v1::ResourceLogs, metrics::v1::ResourceMetrics, trace::v1::ResourceSpans,
-};
+use crate::otel::{logs::v1::ResourceLogs, metrics::v1::ResourceMetrics, trace::v1::ResourceSpans};
 
 use super::PersistBackend;
 
@@ -54,7 +52,7 @@ impl SqlitePersist {
 #[async_trait::async_trait]
 impl PersistBackend for SqlitePersist {
     async fn write_traces(&self, data: &[ResourceSpans]) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = conn.prepare_cached("INSERT INTO traces (data) VALUES (?1)")?;
         for rs in data {
             let bytes = rs.encode_to_vec();
@@ -64,7 +62,7 @@ impl PersistBackend for SqlitePersist {
     }
 
     async fn write_logs(&self, data: &[ResourceLogs]) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = conn.prepare_cached("INSERT INTO logs (data) VALUES (?1)")?;
         for rl in data {
             let bytes = rl.encode_to_vec();
@@ -74,7 +72,7 @@ impl PersistBackend for SqlitePersist {
     }
 
     async fn write_metrics(&self, data: &[ResourceMetrics]) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = conn.prepare_cached("INSERT INTO metrics (data) VALUES (?1)")?;
         for rm in data {
             let bytes = rm.encode_to_vec();
@@ -84,7 +82,7 @@ impl PersistBackend for SqlitePersist {
     }
 
     async fn load_traces(&self) -> Result<Vec<ResourceSpans>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = conn.prepare("SELECT data FROM traces ORDER BY id")?;
         let rows = stmt.query_map([], |row| {
             let bytes: Vec<u8> = row.get(0)?;
@@ -101,7 +99,7 @@ impl PersistBackend for SqlitePersist {
     }
 
     async fn load_logs(&self) -> Result<Vec<ResourceLogs>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = conn.prepare("SELECT data FROM logs ORDER BY id")?;
         let rows = stmt.query_map([], |row| {
             let bytes: Vec<u8> = row.get(0)?;
@@ -118,7 +116,7 @@ impl PersistBackend for SqlitePersist {
     }
 
     async fn load_metrics(&self) -> Result<Vec<ResourceMetrics>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = conn.prepare("SELECT data FROM metrics ORDER BY id")?;
         let rows = stmt.query_map([], |row| {
             let bytes: Vec<u8> = row.get(0)?;
@@ -135,19 +133,19 @@ impl PersistBackend for SqlitePersist {
     }
 
     async fn clear_traces(&self) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         conn.execute("DELETE FROM traces", [])?;
         Ok(())
     }
 
     async fn clear_logs(&self) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         conn.execute("DELETE FROM logs", [])?;
         Ok(())
     }
 
     async fn clear_metrics(&self) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         conn.execute("DELETE FROM metrics", [])?;
         Ok(())
     }

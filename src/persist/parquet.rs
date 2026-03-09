@@ -4,9 +4,7 @@ use std::sync::Mutex;
 use anyhow::{Context, Result};
 use prost::Message;
 
-use crate::otel::{
-    logs::v1::ResourceLogs, metrics::v1::ResourceMetrics, trace::v1::ResourceSpans,
-};
+use crate::otel::{logs::v1::ResourceLogs, metrics::v1::ResourceMetrics, trace::v1::ResourceSpans};
 
 use super::PersistBackend;
 
@@ -106,7 +104,7 @@ impl ParquetPersist {
 impl PersistBackend for ParquetPersist {
     async fn write_traces(&self, data: &[ResourceSpans]) -> Result<()> {
         let path = self.dir.join("traces.parquet");
-        let mut buf = self.trace_buf.lock().unwrap();
+        let mut buf = self.trace_buf.lock().unwrap_or_else(|e| e.into_inner());
         for rs in data {
             buf.push(rs.encode_to_vec());
         }
@@ -116,7 +114,7 @@ impl PersistBackend for ParquetPersist {
 
     async fn write_logs(&self, data: &[ResourceLogs]) -> Result<()> {
         let path = self.dir.join("logs.parquet");
-        let mut buf = self.log_buf.lock().unwrap();
+        let mut buf = self.log_buf.lock().unwrap_or_else(|e| e.into_inner());
         for rl in data {
             buf.push(rl.encode_to_vec());
         }
@@ -126,7 +124,7 @@ impl PersistBackend for ParquetPersist {
 
     async fn write_metrics(&self, data: &[ResourceMetrics]) -> Result<()> {
         let path = self.dir.join("metrics.parquet");
-        let mut buf = self.metric_buf.lock().unwrap();
+        let mut buf = self.metric_buf.lock().unwrap_or_else(|e| e.into_inner());
         for rm in data {
             buf.push(rm.encode_to_vec());
         }
@@ -135,7 +133,7 @@ impl PersistBackend for ParquetPersist {
     }
 
     async fn load_traces(&self) -> Result<Vec<ResourceSpans>> {
-        let buf = self.trace_buf.lock().unwrap();
+        let buf = self.trace_buf.lock().unwrap_or_else(|e| e.into_inner());
         let mut result = Vec::with_capacity(buf.len());
         for bytes in buf.iter() {
             result.push(
@@ -147,7 +145,7 @@ impl PersistBackend for ParquetPersist {
     }
 
     async fn load_logs(&self) -> Result<Vec<ResourceLogs>> {
-        let buf = self.log_buf.lock().unwrap();
+        let buf = self.log_buf.lock().unwrap_or_else(|e| e.into_inner());
         let mut result = Vec::with_capacity(buf.len());
         for bytes in buf.iter() {
             result.push(
@@ -159,7 +157,7 @@ impl PersistBackend for ParquetPersist {
     }
 
     async fn load_metrics(&self) -> Result<Vec<ResourceMetrics>> {
-        let buf = self.metric_buf.lock().unwrap();
+        let buf = self.metric_buf.lock().unwrap_or_else(|e| e.into_inner());
         let mut result = Vec::with_capacity(buf.len());
         for bytes in buf.iter() {
             result.push(
@@ -171,7 +169,7 @@ impl PersistBackend for ParquetPersist {
     }
 
     async fn clear_traces(&self) -> Result<()> {
-        let mut buf = self.trace_buf.lock().unwrap();
+        let mut buf = self.trace_buf.lock().unwrap_or_else(|e| e.into_inner());
         buf.clear();
         let path = self.dir.join("traces.parquet");
         if path.exists() {
@@ -181,7 +179,7 @@ impl PersistBackend for ParquetPersist {
     }
 
     async fn clear_logs(&self) -> Result<()> {
-        let mut buf = self.log_buf.lock().unwrap();
+        let mut buf = self.log_buf.lock().unwrap_or_else(|e| e.into_inner());
         buf.clear();
         let path = self.dir.join("logs.parquet");
         if path.exists() {
@@ -191,7 +189,7 @@ impl PersistBackend for ParquetPersist {
     }
 
     async fn clear_metrics(&self) -> Result<()> {
-        let mut buf = self.metric_buf.lock().unwrap();
+        let mut buf = self.metric_buf.lock().unwrap_or_else(|e| e.into_inner());
         buf.clear();
         let path = self.dir.join("metrics.parquet");
         if path.exists() {
